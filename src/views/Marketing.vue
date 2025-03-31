@@ -1,5 +1,7 @@
 <template>
+  <!-- 营销活动管理页面主容器 -->
   <div class="marketing-container">
+    <!-- 页面标题和新建按钮区域 -->
     <div class="header">
       <h2>营销活动</h2>
       <el-button type="primary" @click="handleAdd">
@@ -7,6 +9,7 @@
       </el-button>
     </div>
 
+    <!-- 搜索筛选区域 -->
     <el-card class="filter-card">
       <el-form :inline="true" :model="filterForm">
         <el-form-item label="活动名称">
@@ -30,6 +33,7 @@
       </el-form>
     </el-card>
 
+    <!-- 活动列表表格区域 -->
     <el-card class="table-card">
       <el-table :data="marketingList" style="width: 100%" v-loading="loading">
         <el-table-column prop="id" label="活动ID" width="100" />
@@ -54,6 +58,7 @@
         </el-table-column>
       </el-table>
 
+      <!-- 分页组件 -->
       <div class="pagination">
         <el-pagination
           v-model:current-page="currentPage"
@@ -126,15 +131,15 @@ import { ref, onMounted, watch } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
-// 筛选表单
+// 筛选表单数据
 const filterForm = ref({
-  name: '',
-  status: ''
+  name: '', // 活动名称搜索关键词
+  status: '' // 活动状态筛选条件
 })
 
-// 表格数据
-const loading = ref(false)
-const marketingList = ref([
+// 表格数据相关
+const loading = ref(false) // 加载状态
+const marketingList = ref([ // 营销活动列表数据
   {
     id: 1,
     name: '618大促',
@@ -157,19 +162,19 @@ const marketingList = ref([
   }
 ])
 
-// 原始数据
+// 原始数据备份，用于搜索筛选
 const originalList = ref([...marketingList.value])
 
-// 分页
-const currentPage = ref(1)
-const pageSize = ref(10)
-const total = ref(100)
+// 分页相关
+const currentPage = ref(1) // 当前页码
+const pageSize = ref(10) // 每页显示数量
+const total = ref(100) // 总数据量
 
-// 对话框
-const dialogVisible = ref(false)
-const dialogType = ref('add')
-const formRef = ref(null)
-const form = ref({
+// 对话框相关
+const dialogVisible = ref(false) // 对话框显示状态
+const dialogType = ref('add') // 对话框类型：add-新建，edit-编辑，view-查看
+const formRef = ref(null) // 表单引用
+const form = ref({ // 表单数据
   name: '',
   type: '',
   time: [],
@@ -192,7 +197,11 @@ const rules = {
   ]
 }
 
-// 获取状态类型
+/**
+ * 获取状态对应的标签类型
+ * @param {string} status - 活动状态
+ * @returns {string} 标签类型
+ */
 const getStatusType = (status) => {
   const types = {
     '未开始': 'info',
@@ -202,7 +211,10 @@ const getStatusType = (status) => {
   return types[status] || 'info'
 }
 
-// 搜索
+/**
+ * 处理搜索操作
+ * 根据活动名称和状态进行筛选
+ */
 const handleSearch = () => {
   loading.value = true
   try {
@@ -237,7 +249,7 @@ const handleSearch = () => {
   }
 }
 
-// 监听筛选条件变化
+// 监听筛选条件变化，自动触发搜索
 watch(
   () => filterForm.value,
   () => {
@@ -246,7 +258,10 @@ watch(
   { deep: true }
 )
 
-// 新建活动
+/**
+ * 处理新建活动
+ * 打开对话框并重置表单
+ */
 const handleAdd = () => {
   dialogType.value = 'add'
   form.value = {
@@ -258,7 +273,10 @@ const handleAdd = () => {
   dialogVisible.value = true
 }
 
-// 编辑活动
+/**
+ * 处理编辑活动
+ * @param {Object} row - 活动数据
+ */
 const handleEdit = (row) => {
   dialogType.value = 'edit'
   form.value = {
@@ -268,7 +286,10 @@ const handleEdit = (row) => {
   dialogVisible.value = true
 }
 
-// 查看活动
+/**
+ * 处理查看活动详情
+ * @param {Object} row - 活动数据
+ */
 const handleView = (row) => {
   dialogType.value = 'view'
   form.value = {
@@ -278,7 +299,10 @@ const handleView = (row) => {
   dialogVisible.value = true
 }
 
-// 删除活动
+/**
+ * 处理删除活动
+ * @param {Object} row - 活动数据
+ */
 const handleDelete = (row) => {
   ElMessageBox.confirm(
     '确定要删除该活动吗？',
@@ -294,7 +318,10 @@ const handleDelete = (row) => {
   })
 }
 
-// 提交表单
+/**
+ * 处理表单提交
+ * 包含表单验证和提交逻辑
+ */
 const handleSubmit = async () => {
   if (!formRef.value) return
   
@@ -307,28 +334,38 @@ const handleSubmit = async () => {
   })
 }
 
-// 分页
+/**
+ * 处理每页显示数量变化
+ * @param {number} val - 新的每页显示数量
+ */
 const handleSizeChange = (val) => {
   pageSize.value = val
   currentPage.value = 1
   handleSearch()
 }
 
+/**
+ * 处理页码变化
+ * @param {number} val - 新的页码
+ */
 const handleCurrentChange = (val) => {
   currentPage.value = val
   handleSearch()
 }
 
+// 组件挂载时初始化数据
 onMounted(() => {
   // TODO: 初始化数据
 })
 </script>
 
 <style scoped>
+/* 营销活动管理页面主容器样式 */
 .marketing-container {
   padding: 20px;
 }
 
+/* 页面标题和新建按钮区域样式 */
 .header {
   display: flex;
   justify-content: space-between;
@@ -336,20 +373,24 @@ onMounted(() => {
   margin-bottom: 20px;
 }
 
+/* 筛选卡片样式 */
 .filter-card {
   margin-bottom: 20px;
 }
 
+/* 表格卡片样式 */
 .table-card {
   margin-bottom: 20px;
 }
 
+/* 分页区域样式 */
 .pagination {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
 }
 
+/* Element Plus 对话框样式覆盖 */
 :deep(.el-dialog) {
   display: flex;
   flex-direction: column;
@@ -360,6 +401,7 @@ onMounted(() => {
   transform: translate(-50%, -50%);
 }
 
+/* Element Plus 选择器样式覆盖 */
 :deep(.el-select) {
   width: 180px;
 }

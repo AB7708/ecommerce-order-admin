@@ -1,698 +1,765 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Delete } from '@element-plus/icons-vue'
-import { debounce } from 'lodash-es'
+  import { ref, onMounted, onUnmounted } from 'vue'
+  import { ElMessage, ElMessageBox } from 'element-plus'
+  import { Search, Delete } from '@element-plus/icons-vue'
+  import { debounce } from 'lodash-es'
 
-// 状态管理
-const orders = ref([])
-const loading = ref(false)
-const currentPage = ref(1)
-const pageSize = ref(10)
-const total = ref(0)
-const selectedIds = ref([])
-const detailVisible = ref(false)
-const currentOrder = ref(null)
+  // 状态管理
+  const orders = ref([]) // 订单列表数据
+  const loading = ref(false) // 加载状态
+  const currentPage = ref(1) // 当前页码
+  const pageSize = ref(10) // 每页显示数量
+  const total = ref(0) // 订单总数
+  const selectedIds = ref([]) // 选中的订单ID列表
+  const detailVisible = ref(false) // 订单详情弹窗显示状态
+  const currentOrder = ref(null) // 当前查看的订单详情数据
 
-// 搜索条件
-const searchKey = ref('')
-const filterStatus = ref('')
-const searchHistory = ref([])
-const showSearchHistory = ref(false)
+  // 搜索条件
+  const searchKey = ref('') // 搜索关键词
+  const filterStatus = ref('') // 订单状态筛选条件
+  const searchHistory = ref([]) // 搜索历史记录
+  const showSearchHistory = ref(false) // 是否显示搜索历史
 
-// 模拟订单数据
-const defaultOrdersList = [
-  {
-    id: 1,
-    orderNo: 'ORD20240320001',
-    customerName: '张三',
-    phone: '13812345678',
-    address: '北京市朝阳区三里屯SOHO 2号楼 2201',
-    items: [
-      { id: 1, name: 'iPhone 15 Pro', price: 7999, quantity: 1 },
-      { id: 2, name: 'AirPods Pro', price: 1999, quantity: 1 }
-    ],
-    status: '已发货',
-    createTime: '2024-03-20 10:00:00'
-  },
-  {
-    id: 2,
-    orderNo: 'ORD20240320002',
-    customerName: '李四',
-    phone: '13987654321',
-    address: '上海市浦东新区陆家嘴环路1000号',
-    items: [
-      { id: 3, name: '小米智能音箱', price: 299, quantity: 2 },
-      { id: 4, name: '威露士洗衣液', price: 39.9, quantity: 3 }
-    ],
-    status: '已发货',
-    createTime: '2024-03-20 11:30:00'
-  },
-  {
-    id: 3,
-    orderNo: 'ORD20240320003',
-    customerName: '王五',
-    phone: '13765432109',
-    address: '广州市天河区珠江新城花城大道68号',
-    items: [
-      { id: 5, name: '不锈钢炒锅', price: 199, quantity: 1 },
-      { id: 6, name: '收纳盒', price: 29.9, quantity: 5 }
-    ],
-    status: '拣货中',
-    createTime: '2024-03-20 14:20:00'
-  },
-  {
-    id: 4,
-    orderNo: 'ORD20240320004',
-    customerName: '赵六',
-    phone: '13698765432',
-    address: '深圳市南山区科技园科技路1号',
-    items: [
-      { id: 7, name: 'Keep智能动感单车', price: 1999, quantity: 1 },
-      { id: 8, name: '小米智能跳绳', price: 99, quantity: 2 }
-    ],
-    status: '拣货中',
-    createTime: '2024-03-20 16:45:00'
-  },
-  {
-    id: 5,
-    orderNo: 'ORD20240320005',
-    customerName: '钱七',
-    phone: '13512345678',
-    address: '成都市武侯区人民南路四段1号',
-    items: [
-      { id: 9, name: '迪卡侬瑜伽垫', price: 49, quantity: 2 },
-      { id: 10, name: '北面冲锋衣', price: 1299, quantity: 1 }
-    ],
-    status: '待发货',
-    createTime: '2024-03-20 18:30:00'
-  },
-  {
-    id: 6,
-    orderNo: 'ORD20240320006',
-    customerName: '孙八',
-    phone: '13487654321',
-    address: '杭州市西湖区文三路478号',
-    items: [
-      { id: 11, name: '探路者登山包', price: 399, quantity: 1 },
-      { id: 12, name: '牧高笛帐篷', price: 599, quantity: 1 }
-    ],
-    status: '待发货',
-    createTime: '2024-03-20 20:15:00'
-  },
-  {
-    id: 7,
-    orderNo: 'ORD20240320007',
-    customerName: '周九',
-    phone: '13365432109',
-    address: '武汉市洪山区珞瑜路1037号',
-    items: [
-      { id: 13, name: '安踏运动短裤', price: 89, quantity: 3 },
-      { id: 14, name: '李宁速干T恤', price: 79, quantity: 2 }
-    ],
-    status: '待发货',
-    createTime: '2024-03-20 21:00:00'
-  },
-  {
-    id: 8,
-    orderNo: 'ORD20240320008',
-    customerName: '吴十',
-    phone: '13298765432',
-    address: '南京市玄武区珠江路1号',
-    items: [
-      { id: 15, name: '耐克运动袜', price: 39, quantity: 5 },
-      { id: 16, name: '三只松鼠坚果礼盒', price: 99, quantity: 2 }
-    ],
-    status: '待发货',
-    createTime: '2024-03-20 22:30:00'
-  },
-  {
-    id: 9,
-    orderNo: 'ORD20240320009',
-    customerName: '郑十一',
-    phone: '13112345678',
-    address: '重庆市渝中区解放碑步行街1号',
-    items: [
-      { id: 17, name: '百草味肉脯', price: 29.9, quantity: 4 },
-      { id: 18, name: '良品铺子薯片', price: 9.9, quantity: 10 }
-    ],
-    status: '待发货',
-    createTime: '2024-03-20 23:15:00'
-  },
-  {
-    id: 10,
-    orderNo: 'ORD20240320010',
-    customerName: '王十二',
-    phone: '13087654321',
-    address: '西安市碑林区南院门1号',
-    items: [
-      { id: 19, name: '茅台酒', price: 1499, quantity: 1 },
-      { id: 20, name: '青岛啤酒', price: 6.5, quantity: 12 }
-    ],
-    status: '待发货',
-    createTime: '2024-03-20 23:45:00'
-  },
-  {
-    id: 11,
-    orderNo: 'ORD20240319001',
-    customerName: '陈一',
-    phone: '13912345678',
-    address: '北京市海淀区中关村科技园区',
-    items: [
-      { id: 21, name: '华为Mate60 Pro', price: 6999, quantity: 1 },
-      { id: 22, name: '华为Watch GT4', price: 2499, quantity: 1 }
-    ],
-    status: '已发货',
-    createTime: '2024-03-19 09:15:00'
-  },
-  {
-    id: 12,
-    orderNo: 'ORD20240319002',
-    customerName: '刘二',
-    phone: '13887654321',
-    address: '上海市徐汇区漕河泾开发区',
-    items: [
-      { id: 23, name: '小米14 Ultra', price: 5999, quantity: 1 },
-      { id: 24, name: '小米平板6 Pro', price: 2999, quantity: 1 }
-    ],
-    status: '已发货',
-    createTime: '2024-03-19 10:30:00'
-  },
-  {
-    id: 13,
-    orderNo: 'ORD20240319003',
-    customerName: '张三',
-    phone: '13765432109',
-    address: '广州市越秀区北京路步行街',
-    items: [
-      { id: 25, name: 'OPPO Find X7', price: 4999, quantity: 1 },
-      { id: 26, name: 'OPPO Enco X3', price: 999, quantity: 1 }
-    ],
-    status: '已发货',
-    createTime: '2024-03-19 11:45:00'
-  },
-  {
-    id: 14,
-    orderNo: 'ORD20240319004',
-    customerName: '李四',
-    phone: '13698765432',
-    address: '深圳市福田区华强北电子市场',
-    items: [
-      { id: 27, name: 'vivo X100 Pro', price: 5499, quantity: 1 },
-      { id: 28, name: 'vivo TWS 3', price: 799, quantity: 1 }
-    ],
-    status: '已发货',
-    createTime: '2024-03-19 13:20:00'
-  },
-  {
-    id: 15,
-    orderNo: 'ORD20240319005',
-    customerName: '王五',
-    phone: '13512345678',
-    address: '成都市武侯区春熙路',
-    items: [
-      { id: 29, name: '一加12', price: 4299, quantity: 1 },
-      { id: 30, name: '一加Buds Pro 2', price: 899, quantity: 1 }
-    ],
-    status: '已发货',
-    createTime: '2024-03-19 14:35:00'
-  },
-  {
-    id: 16,
-    orderNo: 'ORD20240319006',
-    customerName: '赵六',
-    phone: '13487654321',
-    address: '杭州市西湖区湖滨银泰',
-    items: [
-      { id: 31, name: '魅族21', price: 3299, quantity: 1 },
-      { id: 32, name: '魅族PANDAER耳机', price: 299, quantity: 1 }
-    ],
-    status: '已发货',
-    createTime: '2024-03-19 15:50:00'
-  },
-  {
-    id: 17,
-    orderNo: 'ORD20240319007',
-    customerName: '钱七',
-    phone: '13365432109',
-    address: '武汉市江汉区江汉路步行街',
-    items: [
-      { id: 33, name: '努比亚Z60 Ultra', price: 3999, quantity: 1 },
-      { id: 34, name: '努比亚NeoAir', price: 499, quantity: 1 }
-    ],
-    status: '已发货',
-    createTime: '2024-03-19 17:05:00'
-  },
-  {
-    id: 18,
-    orderNo: 'ORD20240319008',
-    customerName: '孙八',
-    phone: '13298765432',
-    address: '南京市玄武区新街口',
-    items: [
-      { id: 35, name: 'ROG Phone 8', price: 5999, quantity: 1 },
-      { id: 36, name: 'ROG Cetra II', price: 1299, quantity: 1 }
-    ],
-    status: '已发货',
-    createTime: '2024-03-19 18:20:00'
-  },
-  {
-    id: 19,
-    orderNo: 'ORD20240319009',
-    customerName: '周九',
-    phone: '13112345678',
-    address: '重庆市渝中区解放碑',
-    items: [
-      { id: 37, name: '红魔9 Pro', price: 4599, quantity: 1 },
-      { id: 38, name: '红魔TWS', price: 399, quantity: 1 }
-    ],
-    status: '已发货',
-    createTime: '2024-03-19 19:35:00'
-  },
-  {
-    id: 20,
-    orderNo: 'ORD20240319010',
-    customerName: '吴十',
-    phone: '13087654321',
-    address: '西安市碑林区钟楼',
-    items: [
-      { id: 39, name: '黑鲨5 Pro', price: 3799, quantity: 1 },
-      { id: 40, name: '黑鲨耳机', price: 299, quantity: 1 }
-    ],
-    status: '已发货',
-    createTime: '2024-03-19 20:50:00'
-  }
-]
-
-// 模拟物流数据
-const logisticsData = {
-  'ORD001': [
-    { time: '2024-03-20 10:30:00', status: '订单已创建', location: '系统' },
-    { time: '2024-03-20 10:35:00', status: '订单已支付', location: '系统' },
-    { time: '2024-03-20 11:00:00', status: '订单已确认', location: '系统' }
-  ],
-  'ORD002': [
-    { time: '2024-03-19 15:45:00', status: '订单已创建', location: '系统' },
-    { time: '2024-03-19 15:50:00', status: '订单已支付', location: '系统' },
-    { time: '2024-03-19 16:00:00', status: '订单已确认', location: '系统' },
-    { time: '2024-03-19 16:30:00', status: '已发货', location: '北京市朝阳区' },
-    { time: '2024-03-19 17:00:00', status: '运输中', location: '北京市朝阳区' }
-  ],
-  'ORD003': [
-    { time: '2024-03-18 09:15:00', status: '订单已创建', location: '系统' },
-    { time: '2024-03-18 09:20:00', status: '订单已支付', location: '系统' },
-    { time: '2024-03-18 09:30:00', status: '订单已确认', location: '系统' },
-    { time: '2024-03-18 10:00:00', status: '已发货', location: '上海市浦东新区' },
-    { time: '2024-03-18 11:00:00', status: '运输中', location: '上海市浦东新区' },
-    { time: '2024-03-18 14:00:00', status: '已送达', location: '上海市浦东新区' },
-    { time: '2024-03-18 14:30:00', status: '已完成', location: '上海市浦东新区' }
+  // 模拟订单数据
+  const defaultOrdersList = [
+    {
+      id: 1,
+      orderNo: 'ORD20240320001',
+      customerName: '张三',
+      phone: '13812345678',
+      address: '北京市朝阳区三里屯SOHO 2号楼 2201',
+      items: [
+        { id: 1, name: 'iPhone 15 Pro', price: 7999, quantity: 1 },
+        { id: 2, name: 'AirPods Pro', price: 1999, quantity: 1 }
+      ],
+      status: '已发货',
+      createTime: '2024-03-20 10:00:00'
+    },
+    {
+      id: 2,
+      orderNo: 'ORD20240320002',
+      customerName: '李四',
+      phone: '13987654321',
+      address: '上海市浦东新区陆家嘴环路1000号',
+      items: [
+        { id: 3, name: '小米智能音箱', price: 299, quantity: 2 },
+        { id: 4, name: '威露士洗衣液', price: 39.9, quantity: 3 }
+      ],
+      status: '已发货',
+      createTime: '2024-03-20 11:30:00'
+    },
+    {
+      id: 3,
+      orderNo: 'ORD20240320003',
+      customerName: '王五',
+      phone: '13765432109',
+      address: '广州市天河区珠江新城花城大道68号',
+      items: [
+        { id: 5, name: '不锈钢炒锅', price: 199, quantity: 1 },
+        { id: 6, name: '收纳盒', price: 29.9, quantity: 5 }
+      ],
+      status: '拣货中',
+      createTime: '2024-03-20 14:20:00'
+    },
+    {
+      id: 4,
+      orderNo: 'ORD20240320004',
+      customerName: '赵六',
+      phone: '13698765432',
+      address: '深圳市南山区科技园科技路1号',
+      items: [
+        { id: 7, name: 'Keep智能动感单车', price: 1999, quantity: 1 },
+        { id: 8, name: '小米智能跳绳', price: 99, quantity: 2 }
+      ],
+      status: '拣货中',
+      createTime: '2024-03-20 16:45:00'
+    },
+    {
+      id: 5,
+      orderNo: 'ORD20240320005',
+      customerName: '钱七',
+      phone: '13512345678',
+      address: '成都市武侯区人民南路四段1号',
+      items: [
+        { id: 9, name: '迪卡侬瑜伽垫', price: 49, quantity: 2 },
+        { id: 10, name: '北面冲锋衣', price: 1299, quantity: 1 }
+      ],
+      status: '待发货',
+      createTime: '2024-03-20 18:30:00'
+    },
+    {
+      id: 6,
+      orderNo: 'ORD20240320006',
+      customerName: '孙八',
+      phone: '13487654321',
+      address: '杭州市西湖区文三路478号',
+      items: [
+        { id: 11, name: '探路者登山包', price: 399, quantity: 1 },
+        { id: 12, name: '牧高笛帐篷', price: 599, quantity: 1 }
+      ],
+      status: '待发货',
+      createTime: '2024-03-20 20:15:00'
+    },
+    {
+      id: 7,
+      orderNo: 'ORD20240320007',
+      customerName: '周九',
+      phone: '13365432109',
+      address: '武汉市洪山区珞瑜路1037号',
+      items: [
+        { id: 13, name: '安踏运动短裤', price: 89, quantity: 3 },
+        { id: 14, name: '李宁速干T恤', price: 79, quantity: 2 }
+      ],
+      status: '待发货',
+      createTime: '2024-03-20 21:00:00'
+    },
+    {
+      id: 8,
+      orderNo: 'ORD20240320008',
+      customerName: '吴十',
+      phone: '13298765432',
+      address: '南京市玄武区珠江路1号',
+      items: [
+        { id: 15, name: '耐克运动袜', price: 39, quantity: 5 },
+        { id: 16, name: '三只松鼠坚果礼盒', price: 99, quantity: 2 }
+      ],
+      status: '待发货',
+      createTime: '2024-03-20 22:30:00'
+    },
+    {
+      id: 9,
+      orderNo: 'ORD20240320009',
+      customerName: '郑十一',
+      phone: '13112345678',
+      address: '重庆市渝中区解放碑步行街1号',
+      items: [
+        { id: 17, name: '百草味肉脯', price: 29.9, quantity: 4 },
+        { id: 18, name: '良品铺子薯片', price: 9.9, quantity: 10 }
+      ],
+      status: '待发货',
+      createTime: '2024-03-20 23:15:00'
+    },
+    {
+      id: 10,
+      orderNo: 'ORD20240320010',
+      customerName: '王十二',
+      phone: '13087654321',
+      address: '西安市碑林区南院门1号',
+      items: [
+        { id: 19, name: '茅台酒', price: 1499, quantity: 1 },
+        { id: 20, name: '青岛啤酒', price: 6.5, quantity: 12 }
+      ],
+      status: '待发货',
+      createTime: '2024-03-20 23:45:00'
+    },
+    {
+      id: 11,
+      orderNo: 'ORD20240319001',
+      customerName: '陈一',
+      phone: '13912345678',
+      address: '北京市海淀区中关村科技园区',
+      items: [
+        { id: 21, name: '华为Mate60 Pro', price: 6999, quantity: 1 },
+        { id: 22, name: '华为Watch GT4', price: 2499, quantity: 1 }
+      ],
+      status: '已发货',
+      createTime: '2024-03-19 09:15:00'
+    },
+    {
+      id: 12,
+      orderNo: 'ORD20240319002',
+      customerName: '刘二',
+      phone: '13887654321',
+      address: '上海市徐汇区漕河泾开发区',
+      items: [
+        { id: 23, name: '小米14 Ultra', price: 5999, quantity: 1 },
+        { id: 24, name: '小米平板6 Pro', price: 2999, quantity: 1 }
+      ],
+      status: '已发货',
+      createTime: '2024-03-19 10:30:00'
+    },
+    {
+      id: 13,
+      orderNo: 'ORD20240319003',
+      customerName: '张三',
+      phone: '13765432109',
+      address: '广州市越秀区北京路步行街',
+      items: [
+        { id: 25, name: 'OPPO Find X7', price: 4999, quantity: 1 },
+        { id: 26, name: 'OPPO Enco X3', price: 999, quantity: 1 }
+      ],
+      status: '已发货',
+      createTime: '2024-03-19 11:45:00'
+    },
+    {
+      id: 14,
+      orderNo: 'ORD20240319004',
+      customerName: '李四',
+      phone: '13698765432',
+      address: '深圳市福田区华强北电子市场',
+      items: [
+        { id: 27, name: 'vivo X100 Pro', price: 5499, quantity: 1 },
+        { id: 28, name: 'vivo TWS 3', price: 799, quantity: 1 }
+      ],
+      status: '已发货',
+      createTime: '2024-03-19 13:20:00'
+    },
+    {
+      id: 15,
+      orderNo: 'ORD20240319005',
+      customerName: '王五',
+      phone: '13512345678',
+      address: '成都市武侯区春熙路',
+      items: [
+        { id: 29, name: '一加12', price: 4299, quantity: 1 },
+        { id: 30, name: '一加Buds Pro 2', price: 899, quantity: 1 }
+      ],
+      status: '已发货',
+      createTime: '2024-03-19 14:35:00'
+    },
+    {
+      id: 16,
+      orderNo: 'ORD20240319006',
+      customerName: '赵六',
+      phone: '13487654321',
+      address: '杭州市西湖区湖滨银泰',
+      items: [
+        { id: 31, name: '魅族21', price: 3299, quantity: 1 },
+        { id: 32, name: '魅族PANDAER耳机', price: 299, quantity: 1 }
+      ],
+      status: '已发货',
+      createTime: '2024-03-19 15:50:00'
+    },
+    {
+      id: 17,
+      orderNo: 'ORD20240319007',
+      customerName: '钱七',
+      phone: '13365432109',
+      address: '武汉市江汉区江汉路步行街',
+      items: [
+        { id: 33, name: '努比亚Z60 Ultra', price: 3999, quantity: 1 },
+        { id: 34, name: '努比亚NeoAir', price: 499, quantity: 1 }
+      ],
+      status: '已发货',
+      createTime: '2024-03-19 17:05:00'
+    },
+    {
+      id: 18,
+      orderNo: 'ORD20240319008',
+      customerName: '孙八',
+      phone: '13298765432',
+      address: '南京市玄武区新街口',
+      items: [
+        { id: 35, name: 'ROG Phone 8', price: 5999, quantity: 1 },
+        { id: 36, name: 'ROG Cetra II', price: 1299, quantity: 1 }
+      ],
+      status: '已发货',
+      createTime: '2024-03-19 18:20:00'
+    },
+    {
+      id: 19,
+      orderNo: 'ORD20240319009',
+      customerName: '周九',
+      phone: '13112345678',
+      address: '重庆市渝中区解放碑',
+      items: [
+        { id: 37, name: '红魔9 Pro', price: 4599, quantity: 1 },
+        { id: 38, name: '红魔TWS', price: 399, quantity: 1 }
+      ],
+      status: '已发货',
+      createTime: '2024-03-19 19:35:00'
+    },
+    {
+      id: 20,
+      orderNo: 'ORD20240319010',
+      customerName: '吴十',
+      phone: '13087654321',
+      address: '西安市碑林区钟楼',
+      items: [
+        { id: 39, name: '黑鲨5 Pro', price: 3799, quantity: 1 },
+        { id: 40, name: '黑鲨耳机', price: 299, quantity: 1 }
+      ],
+      status: '已发货',
+      createTime: '2024-03-19 20:50:00'
+    }
   ]
-}
 
-// 计算订单总金额
-const calculateTotal = (items) => {
-  return items.reduce((sum, item) => sum + item.price * item.quantity, 0)
-}
+  // 模拟物流数据
+  const logisticsData = {
+    'ORD001': [
+      { time: '2024-03-20 10:30:00', status: '订单已创建', location: '系统' },
+      { time: '2024-03-20 10:35:00', status: '订单已支付', location: '系统' },
+      { time: '2024-03-20 11:00:00', status: '订单已确认', location: '系统' }
+    ],
+    'ORD002': [
+      { time: '2024-03-19 15:45:00', status: '订单已创建', location: '系统' },
+      { time: '2024-03-19 15:50:00', status: '订单已支付', location: '系统' },
+      { time: '2024-03-19 16:00:00', status: '订单已确认', location: '系统' },
+      { time: '2024-03-19 16:30:00', status: '已发货', location: '北京市朝阳区' },
+      { time: '2024-03-19 17:00:00', status: '运输中', location: '北京市朝阳区' }
+    ],
+    'ORD003': [
+      { time: '2024-03-18 09:15:00', status: '订单已创建', location: '系统' },
+      { time: '2024-03-18 09:20:00', status: '订单已支付', location: '系统' },
+      { time: '2024-03-18 09:30:00', status: '订单已确认', location: '系统' },
+      { time: '2024-03-18 10:00:00', status: '已发货', location: '上海市浦东新区' },
+      { time: '2024-03-18 11:00:00', status: '运输中', location: '上海市浦东新区' },
+      { time: '2024-03-18 14:00:00', status: '已送达', location: '上海市浦东新区' },
+      { time: '2024-03-18 14:30:00', status: '已完成', location: '上海市浦东新区' }
+    ]
+  }
 
-// 从本地存储获取订单数据
-const getLocalOrdersData = () => {
-  const data = localStorage.getItem('ordersList')
-  return data ? JSON.parse(data) : null
-}
+  /**
+  * 计算订单总金额
+  * @param {Array} items - 订单商品列表
+  * @returns {number} 订单总金额
+  */
+  const calculateTotal = (items) => {
+    return items.reduce((sum, item) => sum + item.price * item.quantity, 0)
+  }
 
-// 保存订单数据到本地存储
-const saveOrdersData = (data) => {
-  localStorage.setItem('ordersList', JSON.stringify(data))
-}
+  /**
+  * 从本地存储获取订单数据
+  * @returns {Array|null} 订单数据列表
+  */
+  const getLocalOrdersData = () => {
+    const data = localStorage.getItem('ordersList')
+    return data ? JSON.parse(data) : null
+  }
 
-// 获取订单列表
-const fetchOrdersList = () => {
-  loading.value = true
-  try {
-    // 从本地存储获取数据
-    const localData = localStorage.getItem('ordersList')
-    let allData = []
-    
-    if (localData) {
-      allData = JSON.parse(localData)
-    } else {
-      allData = defaultOrdersList
-      localStorage.setItem('ordersList', JSON.stringify(defaultOrdersList))
+  /**
+  * 保存订单数据到本地存储
+  * @param {Array} data - 订单数据列表
+  */
+  const saveOrdersData = (data) => {
+    localStorage.setItem('ordersList', JSON.stringify(data))
+  }
+
+  /**
+  * 获取订单列表数据
+  * 包含搜索、筛选、分页等处理逻辑
+  */
+  const fetchOrdersList = () => {
+    loading.value = true
+    try {
+      // 从本地存储获取数据
+      const localData = localStorage.getItem('ordersList')
+      let allData = []
+      
+      if (localData) {
+        allData = JSON.parse(localData)
+      } else {
+        allData = defaultOrdersList
+        localStorage.setItem('ordersList', JSON.stringify(defaultOrdersList))
+      }
+      
+      // 应用筛选条件
+      let filteredData = [...allData]
+      
+      // 搜索关键词过滤
+      if (searchKey.value) {
+        const keyword = searchKey.value.toLowerCase()
+        filteredData = filteredData.filter(item => 
+          item.orderNo.toLowerCase().includes(keyword) ||
+          item.customerName.toLowerCase().includes(keyword) ||
+          item.phone.includes(keyword)
+        )
+      }
+      
+      // 状态过滤
+      if (filterStatus.value !== '') {
+        filteredData = filteredData.filter(item => item.status === filterStatus.value)
+      }
+      
+      // 按创建时间降序排序
+      filteredData.sort((a, b) => {
+        return new Date(b.createTime) - new Date(a.createTime)
+      })
+      
+      // 更新总数
+      total.value = filteredData.length
+      
+      // 分页处理
+      const start = (currentPage.value - 1) * pageSize.value
+      const end = start + pageSize.value
+      orders.value = filteredData.slice(start, end)
+    } catch (error) {
+      console.error('获取订单列表失败:', error)
+      ElMessage.error('获取订单列表失败')
+    } finally {
+      loading.value = false
     }
-    
-    // 应用筛选条件
-    let filteredData = [...allData]
-    
-    // 搜索关键词过滤
+  }
+
+  /**
+  * 处理每页显示数量变化
+  * @param {number} val - 新的每页显示数量
+  */
+  const handleSizeChange = (val) => {
+    pageSize.value = val
+    currentPage.value = 1
+    fetchOrdersList()
+  }
+
+  /**
+  * 处理页码变化
+  * @param {number} val - 新的页码
+  */
+  const handleCurrentChange = (val) => {
+    currentPage.value = val
+    fetchOrdersList()
+  }
+
+  /**
+  * 搜索处理函数（使用防抖）
+  * 延迟300ms执行搜索，避免频繁请求
+  */
+  const handleSearch = debounce(() => {
+    currentPage.value = 1
+    fetchOrdersList()
+  }, 300)
+
+  /**
+  * 执行搜索操作
+  * 包含添加搜索历史记录
+  */
+  const executeSearch = () => {
+    addSearchHistory()
+    handleSearch()
+  }
+
+  /**
+  * 添加搜索历史记录
+  * 最多保存10条记录
+  */
+  const addSearchHistory = () => {
     if (searchKey.value) {
-      const keyword = searchKey.value.toLowerCase()
-      filteredData = filteredData.filter(item => 
-        item.orderNo.toLowerCase().includes(keyword) ||
-        item.customerName.toLowerCase().includes(keyword) ||
-        item.phone.includes(keyword)
-      )
-    }
-    
-    // 状态过滤
-    if (filterStatus.value !== '') {
-      filteredData = filteredData.filter(item => item.status === filterStatus.value)
-    }
-    
-    // 按创建时间降序排序
-    filteredData.sort((a, b) => {
-      return new Date(b.createTime) - new Date(a.createTime)
-    })
-    
-    // 更新总数
-    total.value = filteredData.length
-    
-    // 分页处理
-    const start = (currentPage.value - 1) * pageSize.value
-    const end = start + pageSize.value
-    orders.value = filteredData.slice(start, end)
-  } catch (error) {
-    console.error('获取订单列表失败:', error)
-    ElMessage.error('获取订单列表失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-// 添加分页变化处理函数
-const handleSizeChange = (val) => {
-  pageSize.value = val
-  currentPage.value = 1
-  fetchOrdersList()
-}
-
-const handleCurrentChange = (val) => {
-  currentPage.value = val
-  fetchOrdersList()
-}
-
-// 搜索处理（使用防抖）
-const handleSearch = debounce(() => {
-  currentPage.value = 1
-  fetchOrdersList()
-}, 300)
-
-// 执行搜索（包含历史记录）
-const executeSearch = () => {
-  addSearchHistory()
-  handleSearch()
-}
-
-// 添加搜索历史
-const addSearchHistory = () => {
-  if (searchKey.value) {
-    const history = {
-      keyword: searchKey.value,
-      status: filterStatus.value,
-      timestamp: Date.now()
-    }
-    searchHistory.value.unshift(history)
-    if (searchHistory.value.length > 10) {
-      searchHistory.value.pop()
-    }
-    localStorage.setItem('ordersSearchHistory', JSON.stringify(searchHistory.value))
-  }
-}
-
-// 使用搜索历史
-const useSearchHistory = (history) => {
-  searchKey.value = history.keyword
-  filterStatus.value = history.status
-  executeSearch()
-  showSearchHistory.value = false
-}
-
-// 删除搜索历史
-const deleteSearchHistory = (index) => {
-  searchHistory.value.splice(index, 1)
-  localStorage.setItem('ordersSearchHistory', JSON.stringify(searchHistory.value))
-}
-
-// 清空搜索历史
-const clearSearchHistory = () => {
-  searchHistory.value = []
-  localStorage.removeItem('ordersSearchHistory')
-}
-
-// 初始化搜索历史
-const initSearchHistory = () => {
-  const history = localStorage.getItem('ordersSearchHistory')
-  if (history) {
-    searchHistory.value = JSON.parse(history)
-  }
-}
-
-// 重置搜索条件
-const resetSearch = () => {
-  searchKey.value = ''
-  filterStatus.value = ''
-  executeSearch()
-}
-
-// 选择处理
-const handleSelectionChange = (selection) => {
-  selectedIds.value = selection.map(item => item.id)
-}
-
-// 发货处理
-const handleShip = (row) => {
-  ElMessageBox.confirm('确认要发货吗？', '提示').then(async () => {
-    try {
-      // 检查库存
-      const goodsData = localStorage.getItem('goodsList')
-      const goods = goodsData ? JSON.parse(goodsData) : []
-      
-      // 检查每个商品的库存
-      for (const item of row.items) {
-        const good = goods.find(g => g.name.trim() === item.name.trim())
-        if (!good) {
-          console.error('商品不存在:', item.name)
-          ElMessage.error(`商品 ${item.name} 不存在`)
-          return
-        }
-        if (good.stock < item.quantity) {
-          console.error('库存不足:', item.name, '需要:', item.quantity, '实际:', good.stock)
-          ElMessage.error(`商品 ${item.name} 库存不足，当前库存: ${good.stock}`)
-          return
-        }
+      const history = {
+        keyword: searchKey.value,
+        status: filterStatus.value,
+        timestamp: Date.now()
       }
-      
-      const localData = localStorage.getItem('ordersList')
-      let allData = localData ? JSON.parse(localData) : defaultOrdersList
-      
-      // 更新订单状态
-      allData = allData.map(item => {
-        if (item.id === row.id) {
-          return { ...item, status: '拣货中' }
-        }
-        return item
-      })
-      
-      // 更新库存
-      const updatedGoods = goods.map(good => {
-        const orderItem = row.items.find(item => item.name.trim() === good.name.trim())
-        if (orderItem) {
-          return { ...good, stock: good.stock - orderItem.quantity }
-        }
-        return good
-      })
-      
-      // 更新物流数据
-      const currentTime = new Date().toLocaleString('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-      }).replace(/\//g, '-')
-      
-      // 确保物流数据存在
-      if (!logisticsData[row.id]) {
-        logisticsData[row.id] = []
+      searchHistory.value.unshift(history)
+      if (searchHistory.value.length > 10) {
+        searchHistory.value.pop()
       }
-      
-      // 添加新的物流记录
-      logisticsData[row.id].push({
-        time: currentTime,
-        status: '正在拣货',
-        location: '仓库'
-      })
-      
-      // 保存所有更新
-      localStorage.setItem('ordersList', JSON.stringify(allData))
-      localStorage.setItem('goodsList', JSON.stringify(updatedGoods))
-      localStorage.setItem('logisticsData', JSON.stringify(logisticsData))
-      
-      ElMessage.success('发货成功')
-      fetchOrdersList()
-    } catch (error) {
-      console.error('发货失败:', error)
-      ElMessage.error('发货失败: ' + error.message)
+      localStorage.setItem('ordersSearchHistory', JSON.stringify(searchHistory.value))
     }
-  })
-}
-
-// 批量发货
-const batchShip = () => {
-  if (!selectedIds.value.length) {
-    ElMessage.warning('请选择要发货的订单')
-    return
   }
-  
-  ElMessageBox.confirm('确认要批量发货吗？', '提示').then(async () => {
-    try {
-      // 检查库存
-      const goodsData = localStorage.getItem('goodsList')
-      const goods = goodsData ? JSON.parse(goodsData) : []
-      const localData = localStorage.getItem('ordersList')
-      let allData = localData ? JSON.parse(localData) : defaultOrdersList
-      
-      // 检查所有选中订单的库存
-      for (const orderId of selectedIds.value) {
-        const order = allData.find(o => o.id === orderId)
-        if (order && order.status === '待发货') {
-          for (const item of order.items) {
-            const good = goods.find(g => g.name.trim() === item.name.trim())
-            if (!good) {
-              console.error('商品不存在:', item.name)
-              ElMessage.error(`订单 ${order.orderNo} 中的商品 ${item.name} 不存在`)
-              return
-            }
-            if (good.stock < item.quantity) {
-              console.error('库存不足:', item.name, '需要:', item.quantity, '实际:', good.stock)
-              ElMessage.error(`订单 ${order.orderNo} 中的商品 ${item.name} 库存不足，当前库存: ${good.stock}`)
-              return
-            }
-          }
-        }
-      }
-      
-      const currentTime = new Date().toLocaleString('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-      }).replace(/\//g, '-')
-      
-      // 更新订单状态和库存
-      let updatedGoods = [...goods]
-      allData = allData.map(item => {
-        if (selectedIds.value.includes(item.id) && item.status === '待发货') {
-          // 更新库存
-          item.items.forEach(orderItem => {
-            const goodIndex = updatedGoods.findIndex(g => g.name.trim() === orderItem.name.trim())
-            if (goodIndex !== -1) {
-              updatedGoods[goodIndex] = {
-                ...updatedGoods[goodIndex],
-                stock: updatedGoods[goodIndex].stock - orderItem.quantity
-              }
-            }
-          })
-          
-          // 确保物流数据存在
-          if (!logisticsData[item.id]) {
-            logisticsData[item.id] = []
-          }
-          
-          // 添加新的物流记录
-          logisticsData[item.id].push({
-            time: currentTime,
-            status: '正在拣货',
-            location: '仓库'
-          })
-          
-          return { ...item, status: '拣货中' }
-        }
-        return item
-      })
-      
-      // 保存所有更新
-      localStorage.setItem('ordersList', JSON.stringify(allData))
-      localStorage.setItem('goodsList', JSON.stringify(updatedGoods))
-      localStorage.setItem('logisticsData', JSON.stringify(logisticsData))
-      
-      ElMessage.success('批量发货成功')
-      fetchOrdersList()
-    } catch (error) {
-      console.error('批量发货失败:', error)
-      ElMessage.error('批量发货失败: ' + error.message)
-    }
-  })
-}
 
-// 查看订单详情
-const viewDetail = (row) => {
-  currentOrder.value = row
-  detailVisible.value = true
-}
-
-// 关闭详情对话框
-const closeDetail = () => {
-  detailVisible.value = false
-  currentOrder.value = null
-}
-
-// 点击外部关闭历史记录
-const handleClickOutside = (event) => {
-  const searchBox = document.querySelector('.search-box')
-  if (searchBox && !searchBox.contains(event.target)) {
+  /**
+  * 使用搜索历史记录
+  * @param {Object} history - 搜索历史记录项
+  */
+  const useSearchHistory = (history) => {
+    searchKey.value = history.keyword
+    filterStatus.value = history.status
+    executeSearch()
     showSearchHistory.value = false
   }
-}
 
-// 初始化
-onMounted(() => {
-  // 清除旧的本地存储数据，确保使用最新的默认数据
-  localStorage.removeItem('ordersList')
-  
-  // 保存默认订单数据到本地存储
-  localStorage.setItem('ordersList', JSON.stringify(defaultOrdersList))
-  
-  // 初始化物流数据
-  const logisticsLocalData = localStorage.getItem('logisticsData')
-  if (logisticsLocalData) {
-    Object.assign(logisticsData, JSON.parse(logisticsLocalData))
+  /**
+  * 删除搜索历史记录
+  * @param {number} index - 要删除的记录索引
+  */
+  const deleteSearchHistory = (index) => {
+    searchHistory.value.splice(index, 1)
+    localStorage.setItem('ordersSearchHistory', JSON.stringify(searchHistory.value))
   }
-  
-  // 获取订单列表
-  fetchOrdersList()
-  initSearchHistory()
-  document.addEventListener('click', handleClickOutside)
-})
 
-onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutside)
-})
-
-// 在 script setup 部分添加 getStatusType 函数
-const getStatusType = (status) => {
-  switch (status) {
-    case '拣货中':
-      return 'success'
-    case '已发货':
-      return 'warning'
-    case '待发货':
-      return 'danger'
-    default:
-      return 'info'
+  /**
+  * 清空搜索历史记录
+  */
+  const clearSearchHistory = () => {
+    searchHistory.value = []
+    localStorage.removeItem('ordersSearchHistory')
   }
-}
+
+  /**
+  * 初始化搜索历史记录
+  * 从本地存储加载历史记录
+  */
+  const initSearchHistory = () => {
+    const history = localStorage.getItem('ordersSearchHistory')
+    if (history) {
+      searchHistory.value = JSON.parse(history)
+    }
+  }
+
+  /**
+  * 重置搜索条件
+  */
+  const resetSearch = () => {
+    searchKey.value = ''
+    filterStatus.value = ''
+    executeSearch()
+  }
+
+  /**
+  * 处理表格选择变化
+  * @param {Array} selection - 选中的行数据
+  */
+  const handleSelectionChange = (selection) => {
+    selectedIds.value = selection.map(item => item.id)
+  }
+
+  /**
+  * 处理单个订单发货
+  * 包含库存检查、状态更新、物流记录等操作
+  * @param {Object} row - 订单数据
+  */
+  const handleShip = (row) => {
+    ElMessageBox.confirm('确认要发货吗？', '提示').then(async () => {
+      try {
+        // 检查库存
+        const goodsData = localStorage.getItem('goodsList')
+        const goods = goodsData ? JSON.parse(goodsData) : []
+        
+        // 检查每个商品的库存
+        for (const item of row.items) {
+          const good = goods.find(g => g.name.trim() === item.name.trim())
+          if (!good) {
+            console.error('商品不存在:', item.name)
+            ElMessage.error(`商品 ${item.name} 不存在`)
+            return
+          }
+          if (good.stock < item.quantity) {
+            console.error('库存不足:', item.name, '需要:', item.quantity, '实际:', good.stock)
+            ElMessage.error(`商品 ${item.name} 库存不足，当前库存: ${good.stock}`)
+            return
+          }
+        }
+        
+        const localData = localStorage.getItem('ordersList')
+        let allData = localData ? JSON.parse(localData) : defaultOrdersList
+        
+        // 更新订单状态
+        allData = allData.map(item => {
+          if (item.id === row.id) {
+            return { ...item, status: '拣货中' }
+          }
+          return item
+        })
+        
+        // 更新库存
+        const updatedGoods = goods.map(good => {
+          const orderItem = row.items.find(item => item.name.trim() === good.name.trim())
+          if (orderItem) {
+            return { ...good, stock: good.stock - orderItem.quantity }
+          }
+          return good
+        })
+        
+        // 更新物流数据
+        const currentTime = new Date().toLocaleString('zh-CN', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        }).replace(/\//g, '-')
+        
+        // 确保物流数据存在
+        if (!logisticsData[row.id]) {
+          logisticsData[row.id] = []
+        }
+        
+        // 添加新的物流记录
+        logisticsData[row.id].push({
+          time: currentTime,
+          status: '正在拣货',
+          location: '仓库'
+        })
+        
+        // 保存所有更新
+        localStorage.setItem('ordersList', JSON.stringify(allData))
+        localStorage.setItem('goodsList', JSON.stringify(updatedGoods))
+        localStorage.setItem('logisticsData', JSON.stringify(logisticsData))
+        
+        ElMessage.success('发货成功')
+        fetchOrdersList()
+      } catch (error) {
+        console.error('发货失败:', error)
+        ElMessage.error('发货失败: ' + error.message)
+      }
+    })
+  }
+
+  /**
+  * 批量发货处理
+  * 包含库存检查、状态更新、物流记录等操作
+  */
+  const batchShip = () => {
+    if (!selectedIds.value.length) {
+      ElMessage.warning('请选择要发货的订单')
+      return
+    }
+    
+    ElMessageBox.confirm('确认要批量发货吗？', '提示').then(async () => {
+      try {
+        // 检查库存
+        const goodsData = localStorage.getItem('goodsList')
+        const goods = goodsData ? JSON.parse(goodsData) : []
+        const localData = localStorage.getItem('ordersList')
+        let allData = localData ? JSON.parse(localData) : defaultOrdersList
+        
+        // 检查所有选中订单的库存
+        for (const orderId of selectedIds.value) {
+          const order = allData.find(o => o.id === orderId)
+          if (order && order.status === '待发货') {
+            for (const item of order.items) {
+              const good = goods.find(g => g.name.trim() === item.name.trim())
+              if (!good) {
+                console.error('商品不存在:', item.name)
+                ElMessage.error(`订单 ${order.orderNo} 中的商品 ${item.name} 不存在`)
+                return
+              }
+              if (good.stock < item.quantity) {
+                console.error('库存不足:', item.name, '需要:', item.quantity, '实际:', good.stock)
+                ElMessage.error(`订单 ${order.orderNo} 中的商品 ${item.name} 库存不足，当前库存: ${good.stock}`)
+                return
+              }
+            }
+          }
+        }
+        
+        const currentTime = new Date().toLocaleString('zh-CN', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        }).replace(/\//g, '-')
+        
+        // 更新订单状态和库存
+        let updatedGoods = [...goods]
+        allData = allData.map(item => {
+          if (selectedIds.value.includes(item.id) && item.status === '待发货') {
+            // 更新库存
+            item.items.forEach(orderItem => {
+              const goodIndex = updatedGoods.findIndex(g => g.name.trim() === orderItem.name.trim())
+              if (goodIndex !== -1) {
+                updatedGoods[goodIndex] = {
+                  ...updatedGoods[goodIndex],
+                  stock: updatedGoods[goodIndex].stock - orderItem.quantity
+                }
+              }
+            })
+            
+            // 确保物流数据存在
+            if (!logisticsData[item.id]) {
+              logisticsData[item.id] = []
+            }
+            
+            // 添加新的物流记录
+            logisticsData[item.id].push({
+              time: currentTime,
+              status: '正在拣货',
+              location: '仓库'
+            })
+            
+            return { ...item, status: '拣货中' }
+          }
+          return item
+        })
+        
+        // 保存所有更新
+        localStorage.setItem('ordersList', JSON.stringify(allData))
+        localStorage.setItem('goodsList', JSON.stringify(updatedGoods))
+        localStorage.setItem('logisticsData', JSON.stringify(logisticsData))
+        
+        ElMessage.success('批量发货成功')
+        fetchOrdersList()
+      } catch (error) {
+        console.error('批量发货失败:', error)
+        ElMessage.error('批量发货失败: ' + error.message)
+      }
+    })
+  }
+
+  /**
+  * 查看订单详情
+  * @param {Object} row - 订单数据
+  */
+  const viewDetail = (row) => {
+    currentOrder.value = row
+    detailVisible.value = true
+  }
+
+  /**
+  * 关闭订单详情弹窗
+  */
+  const closeDetail = () => {
+    detailVisible.value = false
+    currentOrder.value = null
+  }
+
+  /**
+  * 点击外部关闭搜索历史
+  * @param {Event} event - 点击事件对象
+  */
+  const handleClickOutside = (event) => {
+    const searchBox = document.querySelector('.search-box')
+    if (searchBox && !searchBox.contains(event.target)) {
+      showSearchHistory.value = false
+    }
+  }
+
+  /**
+  * 获取订单状态对应的标签类型
+  * @param {string} status - 订单状态
+  * @returns {string} 标签类型
+  */
+  const getStatusType = (status) => {
+    switch (status) {
+      case '拣货中':
+        return 'success'
+      case '已发货':
+        return 'warning'
+      case '待发货':
+        return 'danger'
+      default:
+        return 'info'
+    }
+  }
+
+  // 组件生命周期钩子
+  onMounted(() => {
+    // 清除旧的本地存储数据，确保使用最新的默认数据
+    localStorage.removeItem('ordersList')
+    
+    // 保存默认订单数据到本地存储
+    localStorage.setItem('ordersList', JSON.stringify(defaultOrdersList))
+    
+    // 初始化物流数据
+    const logisticsLocalData = localStorage.getItem('logisticsData')
+    if (logisticsLocalData) {
+      Object.assign(logisticsData, JSON.parse(logisticsLocalData))
+    }
+    
+    // 获取订单列表
+    fetchOrdersList()
+    initSearchHistory()
+    document.addEventListener('click', handleClickOutside)
+  })
+
+  onUnmounted(() => {
+    document.removeEventListener('click', handleClickOutside)
+  })
 </script>
 
 <template>
+  <!-- 订单管理页面主容器 -->
   <div class="orders-manage">
-    <!-- 搜索与操作区 -->
+    <!-- 搜索与操作区域 -->
     <div class="operate-bar">
+      <!-- 左侧搜索和筛选区域 -->
       <div class="left">
+        <!-- 搜索框组件 -->
         <div class="search-box">
           <el-input
             v-model="searchKey"
@@ -733,6 +800,7 @@ const getStatusType = (status) => {
             </div>
           </div>
         </div>
+        <!-- 订单状态筛选下拉框 -->
         <el-select
           v-model="filterStatus"
           placeholder="订单状态"
@@ -745,6 +813,7 @@ const getStatusType = (status) => {
           <el-option label="已发货" value="已发货" />
         </el-select>
       </div>
+      <!-- 右侧操作按钮区域 -->
       <div class="right">
         <el-button type="primary" :disabled="!selectedIds.length" @click="batchShip">
           批量发货
@@ -754,6 +823,7 @@ const getStatusType = (status) => {
 
     <!-- 订单表格和分页容器 -->
     <div class="table-container">
+      <!-- 订单列表表格 -->
       <el-table
         :data="orders"
         v-loading="loading"
@@ -762,8 +832,11 @@ const getStatusType = (status) => {
         height="calc(100vh - 280px)"
         border
       >
+        <!-- 选择列 -->
         <el-table-column type="selection" width="55" fixed />
+        <!-- 订单号列 -->
         <el-table-column prop="orderNo" label="订单号" width="180" fixed />
+        <!-- 客户信息列 -->
         <el-table-column label="客户信息" width="200" fixed>
           <template #default="{ row }">
             <div class="customer-info">
@@ -772,6 +845,7 @@ const getStatusType = (status) => {
             </div>
           </template>
         </el-table-column>
+        <!-- 商品信息列 -->
         <el-table-column label="商品信息" min-width="300">
           <template #default="{ row }">
             <div class="goods-info">
@@ -783,11 +857,13 @@ const getStatusType = (status) => {
             </div>
           </template>
         </el-table-column>
+        <!-- 总金额列 -->
         <el-table-column prop="total" label="总金额" width="120">
           <template #default="{ row }">
             ¥{{ calculateTotal(row.items).toFixed(2) }}
           </template>
         </el-table-column>
+        <!-- 订单状态列 -->
         <el-table-column prop="status" label="状态" width="100" align="center">
           <template #default="{ row }">
             <el-tag :type="getStatusType(row.status)">
@@ -795,7 +871,9 @@ const getStatusType = (status) => {
             </el-tag>
           </template>
         </el-table-column>
+        <!-- 下单时间列 -->
         <el-table-column prop="createTime" label="下单时间" width="180" />
+        <!-- 操作列 -->
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button 
@@ -811,7 +889,7 @@ const getStatusType = (status) => {
         </el-table-column>
       </el-table>
 
-      <!-- 分页 -->
+      <!-- 分页组件 -->
       <div class="pagination-container">
         <el-pagination
           v-model:current-page="currentPage"
@@ -922,6 +1000,7 @@ const getStatusType = (status) => {
 </template>
 
 <style scoped>
+/* 订单管理页面主容器样式 */
 .orders-manage {
   padding: 24px;
   background: var(--bg-color);
@@ -931,6 +1010,7 @@ const getStatusType = (status) => {
   gap: 16px;
 }
 
+/* 操作栏样式 */
 .operate-bar {
   display: flex;
   justify-content: space-between;
@@ -939,6 +1019,7 @@ const getStatusType = (status) => {
   flex-shrink: 0;
 }
 
+/* 操作栏左侧区域样式 */
 .operate-bar .left {
   display: flex;
   align-items: center;
@@ -946,23 +1027,27 @@ const getStatusType = (status) => {
   flex: 1;
 }
 
+/* 搜索框容器样式 */
 .search-box {
   position: relative;
   width: 300px;
   flex-shrink: 0;
 }
 
+/* Element Plus 选择器样式覆盖 */
 :deep(.el-select) {
   width: 120px;
   flex-shrink: 0;
 }
 
+/* 操作栏右侧区域样式 */
 .operate-bar .right {
   display: flex;
   gap: 12px;
   flex-shrink: 0;
 }
 
+/* 表格容器样式 */
 .table-container {
   flex: 1;
   display: flex;
@@ -972,6 +1057,7 @@ const getStatusType = (status) => {
   overflow: hidden;
 }
 
+/* 分页容器样式 */
 .pagination-container {
   padding: 16px;
   background: white;
@@ -980,6 +1066,7 @@ const getStatusType = (status) => {
   justify-content: flex-end;
 }
 
+/* 客户信息样式 */
 .customer-info {
   display: flex;
   flex-direction: column;
@@ -995,6 +1082,7 @@ const getStatusType = (status) => {
   font-size: 0.9em;
 }
 
+/* 商品信息样式 */
 .goods-info {
   display: flex;
   flex-direction: column;
@@ -1024,6 +1112,7 @@ const getStatusType = (status) => {
   min-width: 80px;
 }
 
+/* 搜索历史下拉框样式 */
 .search-history {
   position: absolute;
   top: 100%;
@@ -1037,6 +1126,7 @@ const getStatusType = (status) => {
   border: 1px solid #dcdfe6;
 }
 
+/* 搜索历史头部样式 */
 .history-header {
   display: flex;
   justify-content: space-between;
@@ -1046,12 +1136,14 @@ const getStatusType = (status) => {
   background-color: #f5f7fa;
 }
 
+/* 搜索历史列表样式 */
 .history-list {
   max-height: 300px;
   overflow-y: auto;
   background-color: white;
 }
 
+/* 搜索历史项样式 */
 .history-item {
   display: flex;
   align-items: center;
@@ -1098,6 +1190,7 @@ const getStatusType = (status) => {
   white-space: nowrap;
 }
 
+/* Element Plus 表格样式覆盖 */
 :deep(.el-table) {
   flex: 1;
   overflow: hidden;
@@ -1123,6 +1216,7 @@ const getStatusType = (status) => {
   height: 100% !important;
 }
 
+/* Element Plus 分页样式覆盖 */
 :deep(.el-pagination) {
   padding: 0;
   margin: 0;
@@ -1161,6 +1255,7 @@ const getStatusType = (status) => {
   cursor: not-allowed;
 }
 
+/* 订单详情对话框样式 */
 .order-detail-dialog :deep(.el-dialog__body) {
   padding: 20px;
 }
@@ -1171,6 +1266,7 @@ const getStatusType = (status) => {
   gap: 24px;
 }
 
+/* 详情区块样式 */
 .detail-section {
   background: #f8f9fa;
   border-radius: 8px;
@@ -1184,12 +1280,14 @@ const getStatusType = (status) => {
   color: #1a1a1a;
 }
 
+/* 信息网格布局样式 */
 .info-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 16px;
 }
 
+/* 信息项样式 */
 .info-item {
   display: flex;
   align-items: center;
@@ -1206,6 +1304,7 @@ const getStatusType = (status) => {
   font-weight: 500;
 }
 
+/* 总金额样式 */
 .total-amount {
   margin-top: 16px;
   text-align: right;
@@ -1222,6 +1321,7 @@ const getStatusType = (status) => {
   color: var(--el-color-danger);
 }
 
+/* 物流信息项样式 */
 .logistics-item {
   display: flex;
   flex-direction: column;
@@ -1238,6 +1338,7 @@ const getStatusType = (status) => {
   font-size: 0.9em;
 }
 
+/* Element Plus 时间线样式覆盖 */
 :deep(.el-timeline-item__node) {
   background-color: var(--el-color-primary);
 }

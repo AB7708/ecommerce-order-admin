@@ -7,23 +7,23 @@ import { formatCurrency } from '../utils/format'
 import { debounce } from 'lodash-es'
 
 // 状态管理
-const goodsList = ref([])
-const loading = ref(false)
-const currentPage = ref(1)
-const pageSize = ref(9)
-const total = ref(0)
-const selectedIds = ref([])
-const showEditor = ref(false)
-const currentGoods = ref(null)
+const goodsList = ref([]) // 商品列表数据
+const loading = ref(false) // 加载状态
+const currentPage = ref(1) // 当前页码
+const pageSize = ref(9) // 每页显示数量
+const total = ref(0) // 总数据量
+const selectedIds = ref([]) // 选中的商品ID列表
+const showEditor = ref(false) // 是否显示编辑弹窗
+const currentGoods = ref(null) // 当前编辑的商品数据
 
 // 搜索条件
-const searchKey = ref('')
-const selectedCategory = ref([])
-const filterStatus = ref('')
-const searchHistory = ref([])
-const showSearchHistory = ref(false)
+const searchKey = ref('') // 搜索关键词
+const selectedCategory = ref([]) // 选中的分类
+const filterStatus = ref('') // 商品状态筛选
+const searchHistory = ref([]) // 搜索历史记录
+const showSearchHistory = ref(false) // 是否显示搜索历史
 
-// 模拟分类数据
+// 商品分类数据配置
 const categories = [
   {
     value: '',
@@ -77,7 +77,7 @@ const categories = [
   }
 ]
 
-// 默认商品数据
+// 默认商品数据列表
 const defaultGoodsList = [
   {
     id: 1,
@@ -422,7 +422,7 @@ const saveGoodsData = (data) => {
   localStorage.setItem('goodsList', JSON.stringify(data))
 }
 
-// 获取商品列表
+// 获取商品列表数据
 const fetchGoodsList = () => {
   loading.value = true
   try {
@@ -454,7 +454,6 @@ const fetchGoodsList = () => {
     // 分类过滤
     if (selectedCategory.value && selectedCategory.value.length) {
       const categoryValue = selectedCategory.value[selectedCategory.value.length - 1]
-      // 只有当不是"全部"时才进行过滤
       if (categoryValue !== '') {
         filteredData = filteredData.filter(item => {
           // 处理父分类
@@ -495,9 +494,9 @@ const fetchGoodsList = () => {
   }
 }
 
-// 监听状态变化
+// 监听状态变化，重置页码并重新获取数据
 watch(() => filterStatus.value, (newVal) => {
-  currentPage.value = 1 // 重置页码
+  currentPage.value = 1
   fetchGoodsList()
 }, { immediate: true })
 
@@ -530,13 +529,14 @@ const getCategoryName = (categoryValue) => {
   return categoryMap[value] || ''
 }
 
-// 添加分页变化处理函数
+// 处理每页显示数量变化
 const handleSizeChange = (val) => {
   pageSize.value = val
   currentPage.value = 1
   fetchGoodsList()
 }
 
+// 处理页码变化
 const handleCurrentChange = (val) => {
   currentPage.value = val
   fetchGoodsList()
@@ -640,7 +640,7 @@ const changeStatus = async (row) => {
   }
 }
 
-// 批量状态切换
+// 批量操作（删除/状态切换）
 const batchOperate = (type) => {
   if (type === 'delete') {
     ElMessageBox.confirm('确认要删除选中的商品吗？', '提示').then(async () => {
@@ -692,7 +692,7 @@ const batchOperate = (type) => {
   }
 }
 
-// 商品操作
+// 商品操作相关方法
 const showAddDialog = () => {
   currentGoods.value = null
   showEditor.value = true
@@ -736,7 +736,7 @@ const handleClickOutside = (event) => {
   }
 }
 
-// 初始化
+// 组件生命周期钩子
 onMounted(() => {
   // 检查本地存储是否有数据
   const localData = localStorage.getItem('goodsList')
@@ -754,12 +754,14 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
 })
 
+// 表单数据
 const form = reactive({
   name: '',
   category: '',
   price: '',
   stock: '',
   images: [],
+  // 价格验证规则
   priceRules: [
     { required: true, message: '请输入商品价格', trigger: 'blur' },
     { type: 'number', message: '价格必须为数字', trigger: 'blur' },
@@ -771,6 +773,7 @@ const form = reactive({
       }
     }, trigger: 'blur' }
   ],
+  // 库存验证规则
   stockRules: [
     { required: true, message: '请输入商品库存', trigger: 'blur' },
     { type: 'number', message: '库存必须为数字', trigger: 'blur' },
@@ -784,6 +787,7 @@ const form = reactive({
   ]
 })
 
+// 提交表单
 const submit = async () => {
   if (!formRef.value) return
   
@@ -803,6 +807,7 @@ const submit = async () => {
   })
 }
 
+// 处理编辑器的刷新
 const handleEditorRefresh = () => {
   fetchGoodsList()
   showEditor.value = false

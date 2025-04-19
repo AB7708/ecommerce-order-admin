@@ -1,6 +1,5 @@
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import type { Ref } from 'vue'
-import { ElMessage } from 'element-plus'
 import { formatCurrency, formatNumber } from '@/utils/format'
 
 interface StatItem {
@@ -17,11 +16,6 @@ interface ChartData {
   labels: string[]
   sales: number[]
   orders: number[]
-}
-
-interface ChartDataPoint {
-  date: string
-  value: number
 }
 
 export function useDataDashboard() {

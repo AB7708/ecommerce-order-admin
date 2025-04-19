@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, ElTable, ElTableColumn, ElSelect, ElOption, ElInput, ElButton, ElPagination } from 'element-plus'
-
-const router = useRouter()
 
 interface Order {
   id: string
@@ -490,11 +487,6 @@ const handleDelete = async (order: Order) => {
   } catch (error) {
     console.error('删除订单失败:', error)
   }
-}
-
-// 添加路由跳转方法
-const navigateTo = (path: string) => {
-  router.push(path)
 }
 
 onMounted(() => {

@@ -1,491 +1,623 @@
-<script setup>
-import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
+<script setup lang="ts">
+import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Plus, Delete } from '@element-plus/icons-vue'
-import GoodsEditor from '../components/goods/GoodsEditor.vue'
-import { formatCurrency } from '../utils/format'
-import { debounce } from 'lodash-es'
+import type { CascaderOption } from 'element-plus'
 
-// 状态管理
-const goodsList = ref([]) // 商品列表数据
-const loading = ref(false) // 加载状态
-const currentPage = ref(1) // 当前页码
-const pageSize = ref(9) // 每页显示数量
-const total = ref(0) // 总数据量
-const selectedIds = ref([]) // 选中的商品ID列表
-const showEditor = ref(false) // 是否显示编辑弹窗
-const currentGoods = ref(null) // 当前编辑的商品数据
+interface Product {
+  id: string
+  name: string
+  price: number
+  stock: number
+  category: string
+  description: string
+  status: number // 0: 下架, 1: 上架
+  images?: string[]
+  sku?: string
+}
 
-// 搜索条件
-const searchKey = ref('') // 搜索关键词
-const selectedCategory = ref([]) // 选中的分类
-const filterStatus = ref('') // 商品状态筛选
-const searchHistory = ref([]) // 搜索历史记录
-const showSearchHistory = ref(false) // 是否显示搜索历史
+interface Category extends CascaderOption {
+  value: string
+  label: string
+  children?: Category[]
+}
 
-// 商品分类数据配置
-const categories = [
+const products = ref<Product[]>([])
+const loading = ref(false)
+const searchQuery = ref('')
+const selectedCategory = ref<string[]>([])
+const showAddDialog = ref(false)
+const showEditDialog = ref(false)
+const currentPage = ref(1)
+const pageSize = ref(10)
+const currentProduct = ref<Partial<Product>>({
+  name: '',
+  price: 0,
+  stock: 0,
+  category: '',
+  description: '',
+  status: 1,
+  sku: ''
+})
+
+// 商品分类数据
+const categories: Category[] = [
   {
-    value: '',
-    label: '全部',
-    leaf: true
+    value: 'all',
+    label: '全部商品'
   },
   {
-    value: '1',
-    label: '智能设备',
+    value: 'electronics',
+    label: '电子产品',
     children: [
-      { value: '1-1', label: '智能手机', leaf: true },
-      { value: '1-2', label: '智能音箱', leaf: true },
-      { value: '1-3', label: '蓝牙耳机', leaf: true }
+      { value: 'smartphone', label: '智能手机' },
+      { value: 'laptop', label: '笔记本电脑' },
+      { value: 'tablet', label: '平板电脑' },
+      { value: 'accessories', label: '配件' }
     ]
   },
   {
-    value: '2',
-    label: '日用百货',
+    value: 'clothing',
+    label: '服装服饰',
     children: [
-      { value: '2-1', label: '清洁用品', leaf: true },
-      { value: '2-2', label: '厨房用品', leaf: true },
-      { value: '2-3', label: '家居收纳', leaf: true }
+      { value: 'men', label: '男装' },
+      { value: 'women', label: '女装' },
+      { value: 'children', label: '童装' },
+      { value: 'accessories', label: '配饰' }
     ]
   },
   {
-    value: '3',
-    label: '运动户外',
-    children: [
-      { value: '3-1', label: '健身器材', leaf: true },
-      { value: '3-2', label: '户外装备', leaf: true },
-      { value: '3-3', label: '运动服饰', leaf: true }
-    ]
-  },
-  {
-    value: '4',
+    value: 'food',
     label: '食品饮料',
     children: [
-      { value: '4-1', label: '休闲零食', leaf: true },
-      { value: '4-2', label: '酒水饮品', leaf: true },
-      { value: '4-3', label: '粮油调味', leaf: true }
-    ]
-  },
-  {
-    value: '5',
-    label: '美妆个护',
-    children: [
-      { value: '5-1', label: '护肤彩妆', leaf: true },
-      { value: '5-2', label: '洗护用品', leaf: true },
-      { value: '5-3', label: '香水香氛', leaf: true }
+      { value: 'snacks', label: '零食' },
+      { value: 'drinks', label: '饮料' },
+      { value: 'fresh', label: '生鲜' },
+      { value: 'bakery', label: '烘焙' }
     ]
   }
 ]
 
-// 默认商品数据列表
-const defaultGoodsList = [
+// 默认商品数据
+const defaultProducts: Product[] = [
+  // 电子产品 - 智能手机
   {
-    id: 1,
-    name: 'iPhone 15 Pro',
-    sku: 'SM-001-IP15P',
-    thumb: 'https://example.com/iphone.jpg',
-    category: '智能设备/智能手机',
-    price: 7999,
-    stock: 100,
-    status: 1
-  },
-  {
-    id: 2,
-    name: '小米智能音箱',
-    sku: 'SP-001-MI',
-    thumb: 'https://example.com/speaker.jpg',
-    category: '智能设备/智能音箱',
-    price: 299,
-    stock: 200,
-    status: 1
-  },
-  {
-    id: 3,
-    name: 'AirPods Pro',
-    sku: 'HP-001-APP',
-    thumb: 'https://example.com/airpods.jpg',
-    category: '智能设备/蓝牙耳机',
-    price: 1999,
-    stock: 150,
-    status: 1
-  },
-  {
-    id: 4,
-    name: '威露士洗衣液',
-    sku: 'CL-001-WLS',
-    thumb: 'https://example.com/detergent.jpg',
-    category: '日用百货/清洁用品',
-    price: 39.9,
-    stock: 300,
-    status: 1
-  },
-  {
-    id: 5,
-    name: '不锈钢炒锅',
-    sku: 'KT-001-PAN',
-    thumb: 'https://example.com/pan.jpg',
-    category: '日用百货/厨房用品',
-    price: 199,
-    stock: 100,
-    status: 1
-  },
-  {
-    id: 6,
-    name: '收纳盒',
-    sku: 'ST-001-BOX',
-    thumb: 'https://example.com/box.jpg',
-    category: '日用百货/家居收纳',
-    price: 29.9,
-    stock: 500,
-    status: 1
-  },
-  {
-    id: 7,
-    name: 'Keep智能动感单车',
-    sku: 'FT-001-KEEP',
-    thumb: 'https://example.com/bike.jpg',
-    category: '运动户外/健身器材',
-    price: 1999,
+    id: '1',
+    name: 'Apple iPhone 15 Pro Max 256GB 钛金属',
+    price: 9999,
     stock: 50,
-    status: 1
+    category: 'electronics/smartphone',
+    description: '6.7英寸超视网膜XDR显示屏，A17 Pro芯片，4800万像素主摄像头',
+    status: 1,
+    sku: 'IP15PM-256'
   },
   {
-    id: 8,
-    name: '小米智能跳绳',
-    sku: 'FT-002-MI',
-    thumb: 'https://example.com/rope.jpg',
-    category: '运动户外/健身器材',
-    price: 99,
-    stock: 200,
-    status: 1
-  },
-  {
-    id: 9,
-    name: '迪卡侬瑜伽垫',
-    sku: 'FT-003-DEC',
-    thumb: 'https://example.com/yoga.jpg',
-    category: '运动户外/健身器材',
-    price: 49,
-    stock: 300,
-    status: 1
-  },
-  {
-    id: 10,
-    name: '北面冲锋衣',
-    sku: 'OT-001-TNF',
-    thumb: 'https://example.com/jacket.jpg',
-    category: '运动户外/户外装备',
-    price: 1299,
+    id: '2',
+    name: 'Huawei Mate 60 Pro 512GB 雅丹黑',
+    price: 6999,
     stock: 80,
-    status: 1
+    category: 'electronics/smartphone',
+    description: '6.82英寸OLED曲面屏，麒麟9000S芯片，5000万像素超感知影像系统',
+    status: 1,
+    sku: 'MT60P-512'
   },
   {
-    id: 11,
-    name: '探路者登山包',
-    sku: 'OT-002-TOR',
-    thumb: 'https://example.com/backpack.jpg',
-    category: '运动户外/户外装备',
-    price: 399,
-    stock: 150,
-    status: 1
-  },
-  {
-    id: 12,
-    name: '牧高笛帐篷',
-    sku: 'OT-003-MGD',
-    thumb: 'https://example.com/tent.jpg',
-    category: '运动户外/户外装备',
-    price: 599,
+    id: '3',
+    name: 'Xiaomi 14 Ultra 1TB 陶瓷黑',
+    price: 5999,
     stock: 100,
-    status: 1
+    category: 'electronics/smartphone',
+    description: '6.73英寸2K AMOLED屏，骁龙8 Gen3，徕卡光学系统',
+    status: 1,
+    sku: 'XM14U-1T'
   },
   {
-    id: 13,
-    name: '安踏运动短裤',
-    sku: 'SP-001-ANTA',
-    thumb: 'https://example.com/shorts.jpg',
-    category: '运动户外/运动服饰',
-    price: 89,
-    stock: 200,
-    status: 1
-  },
-  {
-    id: 14,
-    name: '李宁速干T恤',
-    sku: 'SP-002-LN',
-    thumb: 'https://example.com/tshirt.jpg',
-    category: '运动户外/运动服饰',
-    price: 79,
-    stock: 300,
-    status: 1
-  },
-  {
-    id: 15,
-    name: '耐克运动袜',
-    sku: 'SP-003-NIKE',
-    thumb: 'https://example.com/socks.jpg',
-    category: '运动户外/运动服饰',
-    price: 39,
-    stock: 500,
-    status: 1
-  },
-  {
-    id: 16,
-    name: '三只松鼠坚果礼盒',
-    sku: 'SN-001-SZS',
-    thumb: 'https://example.com/nuts.jpg',
-    category: '食品饮料/休闲零食',
-    price: 99,
-    stock: 200,
-    status: 1
-  },
-  {
-    id: 17,
-    name: '百草味肉脯',
-    sku: 'SN-002-BCW',
-    thumb: 'https://example.com/meat.jpg',
-    category: '食品饮料/休闲零食',
-    price: 29.9,
-    stock: 300,
-    status: 1
-  },
-  {
-    id: 18,
-    name: '良品铺子薯片',
-    sku: 'SN-003-LPZ',
-    thumb: 'https://example.com/chips.jpg',
-    category: '食品饮料/休闲零食',
-    price: 9.9,
-    stock: 500,
-    status: 1
-  },
-  {
-    id: 19,
-    name: '茅台酒',
-    sku: 'DR-001-MT',
-    thumb: 'https://example.com/maotai.jpg',
-    category: '食品饮料/酒水饮品',
-    price: 1499,
-    stock: 50,
-    status: 1
-  },
-  {
-    id: 20,
-    name: '青岛啤酒',
-    sku: 'DR-002-QD',
-    thumb: 'https://example.com/beer.jpg',
-    category: '食品饮料/酒水饮品',
-    price: 6.5,
-    stock: 1000,
-    status: 1
-  },
-  {
-    id: 21,
-    name: '星巴克咖啡豆',
-    sku: 'DR-003-SB',
-    thumb: 'https://example.com/coffee.jpg',
-    category: '食品饮料/酒水饮品',
-    price: 89,
-    stock: 150,
-    status: 1
-  },
-  {
-    id: 22,
-    name: '五常大米',
-    sku: 'GR-001-WC',
-    thumb: 'https://example.com/rice.jpg',
-    category: '食品饮料/粮油调味',
-    price: 199,
-    stock: 100,
-    status: 1
-  },
-  {
-    id: 23,
-    name: '李锦记生抽',
-    sku: 'GR-002-LJJ',
-    thumb: 'https://example.com/sauce.jpg',
-    category: '食品饮料/粮油调味',
-    price: 29.9,
-    stock: 200,
-    status: 1
-  },
-  {
-    id: 24,
-    name: '金龙鱼食用油',
-    sku: 'GR-003-JLY',
-    thumb: 'https://example.com/oil.jpg',
-    category: '食品饮料/粮油调味',
-    price: 79.9,
-    stock: 150,
-    status: 1
-  },
-  {
-    id: 25,
-    name: '兰蔻小黑瓶精华',
-    sku: 'BT-001-LANC',
-    thumb: 'https://example.com/serum.jpg',
-    category: '美妆个护/护肤彩妆',
-    price: 760,
-    stock: 80,
-    status: 1
-  },
-  {
-    id: 26,
-    name: '雅诗兰黛粉底液',
-    sku: 'BT-002-EST',
-    thumb: 'https://example.com/foundation.jpg',
-    category: '美妆个护/护肤彩妆',
-    price: 420,
-    stock: 100,
-    status: 1
-  },
-  {
-    id: 27,
-    name: 'MAC口红',
-    sku: 'BT-003-MAC',
-    thumb: 'https://example.com/lipstick.jpg',
-    category: '美妆个护/护肤彩妆',
-    price: 199,
-    stock: 200,
-    status: 1
-  },
-  {
-    id: 28,
-    name: '资生堂洗发水',
-    sku: 'HC-001-SHIS',
-    thumb: 'https://example.com/shampoo.jpg',
-    category: '美妆个护/洗护用品',
-    price: 68,
-    stock: 150,
-    status: 1
-  },
-  {
-    id: 29,
-    name: '舒肤佳沐浴露',
-    sku: 'HC-002-SAF',
-    thumb: 'https://example.com/bodywash.jpg',
-    category: '美妆个护/洗护用品',
-    price: 39.9,
-    stock: 300,
-    status: 1
-  },
-  {
-    id: 30,
-    name: '佳洁士牙膏',
-    sku: 'HC-003-CREST',
-    thumb: 'https://example.com/toothpaste.jpg',
-    category: '美妆个护/洗护用品',
-    price: 29.9,
-    stock: 400,
-    status: 1
-  },
-  {
-    id: 31,
-    name: '香奈儿香水',
-    sku: 'PF-001-CHAN',
-    thumb: 'https://example.com/perfume1.jpg',
-    category: '美妆个护/香水香氛',
-    price: 1280,
-    stock: 50,
-    status: 1
-  },
-  {
-    id: 32,
-    name: '迪奥真我香水',
-    sku: 'PF-002-DIOR',
-    thumb: 'https://example.com/perfume2.jpg',
-    category: '美妆个护/香水香氛',
-    price: 980,
+    id: '27',
+    name: 'Samsung Galaxy S24 Ultra 512GB 钛灰',
+    price: 8999,
     stock: 60,
-    status: 1
+    category: 'electronics/smartphone',
+    description: '6.8英寸Dynamic AMOLED 2X屏，骁龙8 Gen3，2亿像素主摄',
+    status: 1,
+    sku: 'SGS24U-512'
   },
   {
-    id: 33,
-    name: '祖马龙香水',
-    sku: 'PF-003-JO',
-    thumb: 'https://example.com/perfume3.jpg',
-    category: '美妆个护/香水香氛',
-    price: 680,
+    id: '28',
+    name: 'OPPO Find X7 Ultra 512GB 星夜黑',
+    price: 5999,
     stock: 70,
-    status: 1
+    category: 'electronics/smartphone',
+    description: '6.82英寸2K LTPO屏，骁龙8 Gen3，双潜望长焦',
+    status: 1,
+    sku: 'OPX7U-512'
+  },
+  // 电子产品 - 笔记本电脑
+  {
+    id: '4',
+    name: 'Apple MacBook Pro 16英寸 M3 Max 32GB 1TB',
+    price: 24999,
+    stock: 30,
+    category: 'electronics/laptop',
+    description: '16英寸Liquid视网膜XDR显示屏，M3 Max芯片，32GB统一内存',
+    status: 1,
+    sku: 'MBP16-M3'
+  },
+  {
+    id: '5',
+    name: 'Lenovo ThinkPad X1 Carbon 14英寸 i7 32GB 1TB',
+    price: 12999,
+    stock: 40,
+    category: 'electronics/laptop',
+    description: '14英寸2.8K OLED触控屏，第13代酷睿i7处理器，32GB内存',
+    status: 1,
+    sku: 'TPX1C-14'
+  },
+  {
+    id: '6',
+    name: 'Dell XPS 15 15.6英寸 i9 64GB 2TB',
+    price: 18999,
+    stock: 25,
+    category: 'electronics/laptop',
+    description: '15.6英寸4K+触控屏，第13代酷睿i9处理器，64GB内存',
+    status: 1,
+    sku: 'DXPS15-64'
+  },
+  {
+    id: '29',
+    name: 'Huawei MateBook X Pro 14.2英寸 i7 32GB 1TB',
+    price: 11999,
+    stock: 35,
+    category: 'electronics/laptop',
+    description: '14.2英寸3.1K触控屏，第13代酷睿i7处理器，32GB内存',
+    status: 1,
+    sku: 'MBXP-14'
+  },
+  {
+    id: '30',
+    name: 'ASUS ROG Zephyrus G14 14英寸 R9 32GB 1TB',
+    price: 10999,
+    stock: 45,
+    category: 'electronics/laptop',
+    description: '14英寸2.5K 165Hz屏，AMD R9 7940HS，RTX 4060',
+    status: 1,
+    sku: 'ROGZ14-R9'
+  },
+  // 电子产品 - 平板电脑
+  {
+    id: '7',
+    name: 'Apple iPad Pro 12.9英寸 M2 256GB',
+    price: 8999,
+    stock: 60,
+    category: 'electronics/tablet',
+    description: '12.9英寸Liquid视网膜XDR显示屏，M2芯片，支持Apple Pencil',
+    status: 1,
+    sku: 'IPADP-256'
+  },
+  {
+    id: '8',
+    name: 'Huawei MatePad Pro 12.6英寸 256GB',
+    price: 4999,
+    stock: 70,
+    category: 'electronics/tablet',
+    description: '12.6英寸OLED全面屏，麒麟9000E芯片，支持M-Pencil',
+    status: 1,
+    sku: 'MTPAD-256'
+  },
+  {
+    id: '31',
+    name: 'Samsung Galaxy Tab S9 Ultra 14.6英寸 512GB',
+    price: 7999,
+    stock: 40,
+    category: 'electronics/tablet',
+    description: '14.6英寸Dynamic AMOLED 2X屏，骁龙8 Gen2，S Pen支持',
+    status: 1,
+    sku: 'GTS9U-512'
+  },
+  {
+    id: '32',
+    name: 'Lenovo Yoga Pad Pro 13英寸 256GB',
+    price: 3999,
+    stock: 55,
+    category: 'electronics/tablet',
+    description: '13英寸2.5K屏，骁龙870，支持触控笔',
+    status: 1,
+    sku: 'YGP13-256'
+  },
+  // 电子产品 - 配件
+  {
+    id: '9',
+    name: 'Apple AirPods Pro 2代 主动降噪',
+    price: 1999,
+    stock: 200,
+    category: 'electronics/accessories',
+    description: '主动降噪，空间音频，MagSafe充电盒',
+    status: 1,
+    sku: 'APRO2-001'
+  },
+  {
+    id: '10',
+    name: 'Belkin 3合1 MagSafe充电器',
+    price: 999,
+    stock: 150,
+    category: 'electronics/accessories',
+    description: '支持iPhone、Apple Watch、AirPods同时充电',
+    status: 1,
+    sku: 'B3IN1-001'
+  },
+  {
+    id: '33',
+    name: 'Samsung 45W PD快充充电器',
+    price: 299,
+    stock: 180,
+    category: 'electronics/accessories',
+    description: '45W快充，支持PD协议，小巧便携',
+    status: 1,
+    sku: 'SS45W-PD'
+  },
+  {
+    id: '34',
+    name: 'Anker 20000mAh移动电源',
+    price: 399,
+    stock: 120,
+    category: 'electronics/accessories',
+    description: '20000mAh大容量，支持PD快充，双USB输出',
+    status: 1,
+    sku: 'AK20K-PD'
+  },
+  // 服装 - 男装
+  {
+    id: '11',
+    name: 'Armani Exchange 男士修身西装套装',
+    price: 2999,
+    stock: 30,
+    category: 'clothing/men',
+    description: '100%羊毛面料，修身剪裁，商务休闲两用',
+    status: 1,
+    sku: 'AX-SUIT'
+  },
+  {
+    id: '12',
+    name: 'Nike Dri-FIT 男士运动套装',
+    price: 899,
+    stock: 100,
+    category: 'clothing/men',
+    description: '速干面料，透气舒适，适合运动穿着',
+    status: 1,
+    sku: 'NK-DFIT'
+  },
+  {
+    id: '35',
+    name: 'Tommy Hilfiger 男士休闲衬衫',
+    price: 799,
+    stock: 80,
+    category: 'clothing/men',
+    description: '纯棉面料，经典格纹，商务休闲',
+    status: 1,
+    sku: 'TH-SHIRT'
+  },
+  {
+    id: '36',
+    name: 'Calvin Klein 男士牛仔裤',
+    price: 599,
+    stock: 90,
+    category: 'clothing/men',
+    description: '修身版型，弹性面料，舒适耐穿',
+    status: 1,
+    sku: 'CK-JEANS'
+  },
+  // 服装 - 女装
+  {
+    id: '13',
+    name: 'ZARA 女士羊毛大衣',
+    price: 1299,
+    stock: 50,
+    category: 'clothing/women',
+    description: '100%羊毛，经典双排扣设计，保暖舒适',
+    status: 1,
+    sku: 'ZR-COAT'
+  },
+  {
+    id: '14',
+    name: 'H&M 女士针织连衣裙',
+    price: 399,
+    stock: 80,
+    category: 'clothing/women',
+    description: '修身剪裁，舒适面料，适合日常穿着',
+    status: 1,
+    sku: 'HM-DRESS'
+  },
+  {
+    id: '37',
+    name: 'UNIQLO 女士羽绒服',
+    price: 899,
+    stock: 60,
+    category: 'clothing/women',
+    description: '90%白鸭绒，轻便保暖，多色可选',
+    status: 1,
+    sku: 'UQ-DOWN'
+  },
+  {
+    id: '38',
+    name: 'Mango 女士针织开衫',
+    price: 499,
+    stock: 70,
+    category: 'clothing/women',
+    description: '羊毛混纺，宽松版型，百搭款式',
+    status: 1,
+    sku: 'MG-CARD'
+  },
+  // 服装 - 童装
+  {
+    id: '15',
+    name: 'GAP 儿童纯棉卫衣套装',
+    price: 299,
+    stock: 120,
+    category: 'clothing/children',
+    description: '100%纯棉，舒适透气，适合3-6岁儿童',
+    status: 1,
+    sku: 'GP-KIDS'
+  },
+  {
+    id: '16',
+    name: 'UNIQLO 儿童保暖内衣套装',
+    price: 199,
+    stock: 150,
+    category: 'clothing/children',
+    description: '保暖面料，舒适贴身，适合秋冬穿着',
+    status: 1,
+    sku: 'UQ-KIDS'
+  },
+  {
+    id: '39',
+    name: 'Adidas 儿童运动套装',
+    price: 399,
+    stock: 100,
+    category: 'clothing/children',
+    description: '速干面料，透气舒适，适合运动穿着',
+    status: 1,
+    sku: 'AD-KIDS'
+  },
+  {
+    id: '40',
+    name: 'Balabala 儿童羽绒服',
+    price: 599,
+    stock: 80,
+    category: 'clothing/children',
+    description: '90%白鸭绒，轻便保暖，多色可选',
+    status: 1,
+    sku: 'BB-DOWN'
+  },
+  // 服装 - 配饰
+  {
+    id: '17',
+    name: 'Coach 女士手提包',
+    price: 3999,
+    stock: 20,
+    category: 'clothing/accessories',
+    description: '真皮材质，经典设计，大容量收纳',
+    status: 1,
+    sku: 'CC-BAG'
+  },
+  {
+    id: '18',
+    name: 'Ray-Ban 经典飞行员太阳镜',
+    price: 1299,
+    stock: 40,
+    category: 'clothing/accessories',
+    description: '经典飞行员款式，100%防紫外线',
+    status: 1,
+    sku: 'RB-SUN'
+  },
+  {
+    id: '41',
+    name: 'Michael Kors 女士钱包',
+    price: 1999,
+    stock: 30,
+    category: 'clothing/accessories',
+    description: '真皮材质，多卡位设计，时尚实用',
+    status: 1,
+    sku: 'MK-WALL'
+  },
+  {
+    id: '42',
+    name: 'Fossil 男士皮带',
+    price: 599,
+    stock: 50,
+    category: 'clothing/accessories',
+    description: '真皮材质，经典设计，商务休闲',
+    status: 1,
+    sku: 'FS-BELT'
+  },
+  // 食品 - 零食
+  {
+    id: '19',
+    name: 'Lay\'s 薯片混合装礼盒',
+    price: 99,
+    stock: 200,
+    category: 'food/snacks',
+    description: '包含原味、烧烤、番茄等多种口味',
+    status: 1,
+    sku: 'LS-MIX'
+  },
+  {
+    id: '20',
+    name: 'Nestle 巧克力礼盒',
+    price: 199,
+    stock: 150,
+    category: 'food/snacks',
+    description: '精选多种口味巧克力，精美包装',
+    status: 1,
+    sku: 'NS-CHOC'
+  },
+  {
+    id: '43',
+    name: 'Orion 好丽友派礼盒',
+    price: 79,
+    stock: 180,
+    category: 'food/snacks',
+    description: '松软蛋糕，巧克力涂层，多种口味',
+    status: 1,
+    sku: 'OR-PIE'
+  },
+  {
+    id: '44',
+    name: 'Calbee 薯条三兄弟礼盒',
+    price: 129,
+    stock: 160,
+    category: 'food/snacks',
+    description: '北海道特产，香脆可口，独立包装',
+    status: 1,
+    sku: 'CB-POT'
+  },
+  // 食品 - 饮料
+  {
+    id: '21',
+    name: 'Coca-Cola 可乐24罐装',
+    price: 69,
+    stock: 300,
+    category: 'food/drinks',
+    description: '经典可口可乐，24罐装，冰镇更佳',
+    status: 1,
+    sku: 'CC-24PK'
+  },
+  {
+    id: '22',
+    name: 'Nongfu Spring 矿泉水24瓶装',
+    price: 49,
+    stock: 400,
+    category: 'food/drinks',
+    description: '天然矿泉水，24瓶装，健康饮水',
+    status: 1,
+    sku: 'NFS-24PK'
+  },
+  {
+    id: '45',
+    name: 'Nestle 雀巢咖啡礼盒',
+    price: 199,
+    stock: 120,
+    category: 'food/drinks',
+    description: '精选咖啡豆，多种口味，精美礼盒',
+    status: 1,
+    sku: 'NS-COFF'
+  },
+  {
+    id: '46',
+    name: 'Twinings 英式红茶礼盒',
+    price: 159,
+    stock: 100,
+    category: 'food/drinks',
+    description: '英国进口，多种口味，独立茶包',
+    status: 1,
+    sku: 'TW-TEA'
+  },
+  // 食品 - 生鲜
+  {
+    id: '23',
+    name: '进口车厘子 2kg装',
+    price: 199,
+    stock: 50,
+    category: 'food/fresh',
+    description: '智利进口车厘子，果径28-30mm，新鲜直达',
+    status: 1,
+    sku: 'FR-CHER'
+  },
+  {
+    id: '24',
+    name: '澳洲和牛牛排 500g',
+    price: 299,
+    stock: 30,
+    category: 'food/fresh',
+    description: '澳洲M5和牛，雪花纹路，肉质鲜嫩',
+    status: 1,
+    sku: 'FR-BEEF'
+  },
+  {
+    id: '47',
+    name: '挪威三文鱼 1kg装',
+    price: 199,
+    stock: 40,
+    category: 'food/fresh',
+    description: '挪威进口，新鲜切片，富含Omega-3',
+    status: 1,
+    sku: 'FR-SALM'
+  },
+  {
+    id: '48',
+    name: '新西兰奇异果 12个装',
+    price: 99,
+    stock: 60,
+    category: 'food/fresh',
+    description: '新西兰进口，果肉细腻，酸甜可口',
+    status: 1,
+    sku: 'FR-KIWI'
+  },
+  // 食品 - 烘焙
+  {
+    id: '25',
+    name: '巴黎贝甜 法式面包礼盒',
+    price: 129,
+    stock: 100,
+    category: 'food/bakery',
+    description: '包含法棍、可颂等多种经典面包',
+    status: 1,
+    sku: 'PB-BREAD'
+  },
+  {
+    id: '26',
+    name: '85度C 生日蛋糕 8寸',
+    price: 199,
+    stock: 20,
+    category: 'food/bakery',
+    description: '新鲜奶油蛋糕，多种口味可选',
+    status: 1,
+    sku: '85-CAKE'
+  },
+  {
+    id: '49',
+    name: '好利来 半熟芝士礼盒',
+    price: 159,
+    stock: 80,
+    category: 'food/bakery',
+    description: '日本进口芝士，入口即化，多种口味',
+    status: 1,
+    sku: 'HL-CHEE'
+  },
+  {
+    id: '50',
+    name: '元祖 雪月饼礼盒',
+    price: 299,
+    stock: 40,
+    category: 'food/bakery',
+    description: '冰淇淋月饼，多种口味，精美包装',
+    status: 1,
+    sku: 'YZ-MOON'
   }
 ]
-
-// 从本地存储获取商品数据
-const getLocalGoodsData = () => {
-  const data = localStorage.getItem('goodsList')
-  return data ? JSON.parse(data) : null
-}
-
-// 保存商品数据到本地存储
-const saveGoodsData = (data) => {
-  localStorage.setItem('goodsList', JSON.stringify(data))
-}
 
 // 获取商品列表数据
-const fetchGoodsList = () => {
+const fetchProducts = async () => {
   loading.value = true
   try {
     // 从本地存储获取数据
-    const localData = localStorage.getItem('goodsList')
-    let allData = []
-    
+    const localData = localStorage.getItem('productsList')
     if (localData) {
-      // 如果有本地数据，使用本地数据
-      allData = JSON.parse(localData)
-    } else {
-      // 如果没有本地数据，使用默认数据并保存到本地存储
-      allData = defaultGoodsList
-      localStorage.setItem('goodsList', JSON.stringify(defaultGoodsList))
-    }
-    
-    // 应用筛选条件
-    let filteredData = [...allData]
-    
-    // 搜索关键词过滤
-    if (searchKey.value) {
-      const keyword = searchKey.value.toLowerCase()
-      filteredData = filteredData.filter(item => 
-        item.name.toLowerCase().includes(keyword) ||
-        item.sku.toLowerCase().includes(keyword)
-      )
-    }
-    
-    // 分类过滤
-    if (selectedCategory.value && selectedCategory.value.length) {
-      const categoryValue = selectedCategory.value[selectedCategory.value.length - 1]
-      if (categoryValue !== '') {
-        filteredData = filteredData.filter(item => {
-          // 处理父分类
-          if (categoryValue === '1') {
-            return item.category.startsWith('智能设备')
-          } else if (categoryValue === '2') {
-            return item.category.startsWith('日用百货')
-          } else if (categoryValue === '3') {
-            return item.category.startsWith('运动户外')
-          } else if (categoryValue === '4') {
-            return item.category.startsWith('食品饮料')
-          } else if (categoryValue === '5') {
-            return item.category.startsWith('美妆个护')
-          }
-          // 处理子分类
-          return item.category === getCategoryName([categoryValue])
-        })
+      // 如果本地存储有数据，检查是否需要更新
+      const localProducts = JSON.parse(localData)
+      const localProductIds = localProducts.map((p: Product) => p.id)
+      
+      // 如果本地数据中缺少默认数据中的某些商品，则合并数据
+      const missingProducts = defaultProducts.filter(p => !localProductIds.includes(p.id))
+      if (missingProducts.length > 0) {
+        const updatedProducts = [...localProducts, ...missingProducts]
+        localStorage.setItem('productsList', JSON.stringify(updatedProducts))
+        products.value = updatedProducts
+      } else {
+        products.value = localProducts
       }
+    } else {
+      // 如果没有本地数据，使用默认数据
+      products.value = defaultProducts
+      localStorage.setItem('productsList', JSON.stringify(defaultProducts))
     }
-    
-    // 状态过滤
-    if (filterStatus.value !== '') {
-      filteredData = filteredData.filter(item => item.status === Number(filterStatus.value))
-    }
-    
-    // 更新总数
-    total.value = filteredData.length
-    
-    // 分页处理
-    const start = (currentPage.value - 1) * pageSize.value
-    const end = start + pageSize.value
-    goodsList.value = filteredData.slice(start, end)
   } catch (error) {
     console.error('获取商品列表失败:', error)
     ElMessage.error('获取商品列表失败')
@@ -494,787 +626,279 @@ const fetchGoodsList = () => {
   }
 }
 
-// 监听状态变化，重置页码并重新获取数据
-watch(() => filterStatus.value, (newVal) => {
-  currentPage.value = 1
-  fetchGoodsList()
-}, { immediate: true })
-
-// 获取分类名称
-const getCategoryName = (categoryValue) => {
-  if (!categoryValue || !categoryValue.length) return ''
-  const value = categoryValue[categoryValue.length - 1]
-  const categoryMap = {
-    '1': '智能设备',
-    '1-1': '智能设备/智能手机',
-    '1-2': '智能设备/智能音箱',
-    '1-3': '智能设备/蓝牙耳机',
-    '2': '日用百货',
-    '2-1': '日用百货/清洁用品',
-    '2-2': '日用百货/厨房用品',
-    '2-3': '日用百货/家居收纳',
-    '3': '运动户外',
-    '3-1': '运动户外/健身器材',
-    '3-2': '运动户外/户外装备',
-    '3-3': '运动户外/运动服饰',
-    '4': '食品饮料',
-    '4-1': '食品饮料/休闲零食',
-    '4-2': '食品饮料/酒水饮品',
-    '4-3': '食品饮料/粮油调味',
-    '5': '美妆个护',
-    '5-1': '美妆个护/护肤彩妆',
-    '5-2': '美妆个护/洗护用品',
-    '5-3': '美妆个护/香水香氛'
+// 添加商品
+const handleAdd = () => {
+  currentProduct.value = {
+    name: '',
+    price: 0,
+    stock: 0,
+    category: '',
+    description: '',
+    status: 1,
+    sku: ''
   }
-  return categoryMap[value] || ''
+  showAddDialog.value = true
 }
 
-// 处理每页显示数量变化
-const handleSizeChange = (val) => {
-  pageSize.value = val
-  currentPage.value = 1
-  fetchGoodsList()
+// 编辑商品
+const handleEdit = (product: Product) => {
+  currentProduct.value = { ...product }
+  showEditDialog.value = true
 }
 
-// 处理页码变化
-const handleCurrentChange = (val) => {
-  currentPage.value = val
-  fetchGoodsList()
-}
-
-// 搜索处理（使用防抖）
-const handleSearch = debounce(() => {
-  currentPage.value = 1
-  fetchGoodsList()
-}, 300)
-
-// 执行搜索（包含历史记录）
-const executeSearch = () => {
-  addSearchHistory() // 添加搜索历史
-  handleSearch()
-}
-
-// 添加搜索历史
-const addSearchHistory = () => {
-  if (searchKey.value) {
-    const history = {
-      keyword: searchKey.value,
-      category: selectedCategory.value,
-      status: filterStatus.value,
-      timestamp: Date.now()
-    }
-    searchHistory.value.unshift(history)
-    // 只保留最近10条记录
-    if (searchHistory.value.length > 10) {
-      searchHistory.value.pop()
-    }
-    // 保存到本地存储
-    localStorage.setItem('goodsSearchHistory', JSON.stringify(searchHistory.value))
-  }
-}
-
-// 使用搜索历史
-const useSearchHistory = (history) => {
-  searchKey.value = history.keyword
-  selectedCategory.value = history.category
-  filterStatus.value = history.status
-  executeSearch()
-  showSearchHistory.value = false
-}
-
-// 删除搜索历史
-const deleteSearchHistory = (index) => {
-  searchHistory.value.splice(index, 1)
-  localStorage.setItem('goodsSearchHistory', JSON.stringify(searchHistory.value))
-}
-
-// 清空搜索历史
-const clearSearchHistory = () => {
-  searchHistory.value = []
-  localStorage.removeItem('goodsSearchHistory')
-}
-
-// 初始化搜索历史
-const initSearchHistory = () => {
-  const history = localStorage.getItem('goodsSearchHistory')
-  if (history) {
-    searchHistory.value = JSON.parse(history)
-  }
-}
-
-// 重置搜索条件
-const resetSearch = () => {
-  searchKey.value = ''
-  selectedCategory.value = []
-  filterStatus.value = ''
-  executeSearch()
-}
-
-// 选择处理
-const handleSelectionChange = (selection) => {
-  selectedIds.value = selection.map(item => item.id)
-}
-
-// 单个商品状态切换
-const changeStatus = async (row) => {
+// 删除商品
+const handleDelete = async (product: Product) => {
   try {
+    await ElMessageBox.confirm('确认要删除该商品吗？', '提示', {
+      type: 'warning'
+    })
+    
     // 从本地存储获取数据
-    const localData = localStorage.getItem('goodsList')
-    let allData = localData ? JSON.parse(localData) : defaultGoodsList
-    
-    // 更新商品状态
-    allData = allData.map(item => {
-      if (item.id === row.id) {
-        return { ...item, status: item.status === 1 ? 0 : 1 }
-      }
-      return item
-    })
-    
-    // 保存到本地存储
-    localStorage.setItem('goodsList', JSON.stringify(allData))
-    
-    ElMessage.success(row.status === 1 ? '商品已下架' : '商品已上架')
-    fetchGoodsList()
-  } catch (error) {
-    ElMessage.error('操作失败')
-  }
-}
-
-// 批量操作（删除/状态切换）
-const batchOperate = (type) => {
-  if (type === 'delete') {
-    ElMessageBox.confirm('确认要删除选中的商品吗？', '提示').then(async () => {
-      try {
-        // 从本地存储获取数据
-        const localData = localStorage.getItem('goodsList')
-        let allData = localData ? JSON.parse(localData) : defaultGoodsList
-        
-        // 删除选中的商品
-        allData = allData.filter(item => !selectedIds.value.includes(item.id))
-        
-        // 保存到本地存储
-        localStorage.setItem('goodsList', JSON.stringify(allData))
-        
-        ElMessage.success('删除成功')
-        fetchGoodsList()
-      } catch (error) {
-        ElMessage.error('删除失败')
-      }
-    })
-  } else if (type === 'status') {
-    const status = selectedIds.value.length > 0 && 
-      goodsList.value.find(item => selectedIds.value.includes(item.id))?.status === 1 ? 0 : 1
-    const action = status === 1 ? '上架' : '下架'
-    
-    ElMessageBox.confirm(`确认要${action}选中的商品吗？`, '提示').then(async () => {
-      try {
-        // 从本地存储获取数据
-        const localData = localStorage.getItem('goodsList')
-        let allData = localData ? JSON.parse(localData) : defaultGoodsList
-        
-        // 更新选中商品的状态
-        allData = allData.map(item => {
-          if (selectedIds.value.includes(item.id)) {
-            return { ...item, status }
-          }
-          return item
-        })
-        
-        // 保存到本地存储
-        localStorage.setItem('goodsList', JSON.stringify(allData))
-        
-        ElMessage.success(`${action}成功`)
-        fetchGoodsList()
-      } catch (error) {
-        ElMessage.error(`${action}失败`)
-      }
-    })
-  }
-}
-
-// 商品操作相关方法
-const showAddDialog = () => {
-  currentGoods.value = null
-  showEditor.value = true
-}
-
-const editGoods = (row) => {
-  currentGoods.value = { ...row } // 创建深拷贝避免直接修改
-  showEditor.value = true
-}
-
-const deleteGoods = (id) => {
-  ElMessageBox.confirm('确认要删除该商品吗？', '提示').then(async () => {
-    try {
-      // 从本地存储获取数据
-      const localData = localStorage.getItem('goodsList')
-      let allData = localData ? JSON.parse(localData) : defaultGoodsList
-      
-      // 删除商品
-      allData = allData.filter(item => item.id !== id)
-      
-      // 保存到本地存储
-      localStorage.setItem('goodsList', JSON.stringify(allData))
-      
+    const localData = localStorage.getItem('productsList')
+    if (localData) {
+      const productsList = JSON.parse(localData)
+      const updatedList = productsList.filter((p: Product) => p.id !== product.id)
+      localStorage.setItem('productsList', JSON.stringify(updatedList))
+      products.value = updatedList
       ElMessage.success('删除成功')
-      fetchGoodsList()
-    } catch (error) {
-      ElMessage.error('删除失败')
     }
-  })
-}
-
-const viewDetail = (id) => {
-  ElMessage.info('查看商品详情：' + id)
-}
-
-// 点击外部关闭历史记录
-const handleClickOutside = (event) => {
-  const searchBox = document.querySelector('.search-box')
-  if (searchBox && !searchBox.contains(event.target)) {
-    showSearchHistory.value = false
+  } catch (error) {
+    console.error('删除商品失败:', error)
   }
 }
 
-// 组件生命周期钩子
+// 切换商品状态
+const toggleStatus = (product: Product) => {
+  const localData = localStorage.getItem('productsList')
+  if (localData) {
+    const productsList = JSON.parse(localData)
+    const updatedList = productsList.map((p: Product) => {
+      if (p.id === product.id) {
+        return { ...p, status: p.status === 1 ? 0 : 1 }
+      }
+      return p
+    })
+    localStorage.setItem('productsList', JSON.stringify(updatedList))
+    products.value = updatedList
+    ElMessage.success(product.status === 1 ? '商品已下架' : '商品已上架')
+  }
+}
+
+// 保存商品
+const saveProduct = (product: Partial<Product>) => {
+  const localData = localStorage.getItem('productsList')
+  if (localData) {
+    const productsList = JSON.parse(localData)
+    if (product.id) {
+      // 编辑现有商品
+      const updatedList = productsList.map((p: Product) => 
+        p.id === product.id ? { ...p, ...product } : p
+      )
+      localStorage.setItem('productsList', JSON.stringify(updatedList))
+      products.value = updatedList
+      ElMessage.success('商品更新成功')
+    } else {
+      // 添加新商品
+      const newProduct: Product = {
+        id: Date.now().toString(),
+        name: product.name || '',
+        price: product.price || 0,
+        stock: product.stock || 0,
+        category: product.category || '',
+        description: product.description || '',
+        status: 1,
+        sku: product.sku || ''
+      }
+      productsList.push(newProduct)
+      localStorage.setItem('productsList', JSON.stringify(productsList))
+      products.value = productsList
+      ElMessage.success('商品添加成功')
+    }
+    showAddDialog.value = false
+    showEditDialog.value = false
+  }
+}
+
+// 过滤后的商品列表
+const filteredProducts = computed(() => {
+  let result = [...products.value]
+  
+  // 按分类过滤
+  if (selectedCategory.value.length > 0 && selectedCategory.value[0] !== 'all') {
+    const category = selectedCategory.value[selectedCategory.value.length - 1]
+    result = result.filter(product => product.category.includes(category))
+  }
+  
+  // 按搜索关键词过滤
+  if (searchQuery.value) {
+    const keyword = searchQuery.value.toLowerCase()
+    result = result.filter(product => 
+      product.name.toLowerCase().includes(keyword) ||
+      product.description.toLowerCase().includes(keyword) ||
+      product.sku?.toLowerCase().includes(keyword)
+    )
+  }
+  
+  return result
+})
+
+// 分页后的商品列表
+const paginatedProducts = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  const end = start + pageSize.value
+  return filteredProducts.value.slice(start, end)
+})
+
 onMounted(() => {
-  // 检查本地存储是否有数据
-  const localData = localStorage.getItem('goodsList')
-  if (!localData) {
-    // 如果没有数据，初始化默认数据
-    localStorage.setItem('goodsList', JSON.stringify(defaultGoodsList))
-  }
-  
-  fetchGoodsList()
-  initSearchHistory()
-  document.addEventListener('click', handleClickOutside)
+  fetchProducts()
 })
-
-onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutside)
-})
-
-// 表单数据
-const form = reactive({
-  name: '',
-  category: '',
-  price: '',
-  stock: '',
-  images: [],
-  // 价格验证规则
-  priceRules: [
-    { required: true, message: '请输入商品价格', trigger: 'blur' },
-    { type: 'number', message: '价格必须为数字', trigger: 'blur' },
-    { validator: (rule, value, callback) => {
-      if (value <= 0) {
-        callback(new Error('价格必须大于0'))
-      } else {
-        callback()
-      }
-    }, trigger: 'blur' }
-  ],
-  // 库存验证规则
-  stockRules: [
-    { required: true, message: '请输入商品库存', trigger: 'blur' },
-    { type: 'number', message: '库存必须为数字', trigger: 'blur' },
-    { validator: (rule, value, callback) => {
-      if (value < 0) {
-        callback(new Error('库存不能小于0'))
-      } else {
-        callback()
-      }
-    }, trigger: 'blur' }
-  ]
-})
-
-// 提交表单
-const submit = async () => {
-  if (!formRef.value) return
-  
-  await formRef.value.validate((valid) => {
-    if (valid) {
-      const submitData = {
-        ...form,
-        price: Number(form.price),
-        stock: Number(form.stock),
-        images: imageList.value,
-        status: 1 // 默认上架状态
-      }
-      console.log('提交数据:', submitData)
-      emit('refresh')
-      close()
-    }
-  })
-}
-
-// 处理编辑器的刷新
-const handleEditorRefresh = () => {
-  fetchGoodsList()
-  showEditor.value = false
-  currentGoods.value = null
-}
 </script>
 
 <template>
-  <div class="goods-manage">
-    <!-- 搜索与操作区 -->
-    <div class="operate-bar">
-      <div class="left">
-        <div class="search-box">
-          <el-input
-            v-model="searchKey"
-            placeholder="搜索商品名称/编号"
-            clearable
-            @clear="handleSearch"
-            @keyup.enter="executeSearch"
-            @focus="showSearchHistory = true"
+  <div class="products-container">
+    <h2>商品管理</h2>
+    
+    <!-- 操作栏 -->
+    <div class="operations">
+      <el-button type="primary" @click="handleAdd">添加商品</el-button>
+      <el-cascader
+        v-model="selectedCategory"
+        :options="categories"
+        placeholder="选择分类"
+        style="width: 200px; margin-left: 16px;"
+        clearable
+      />
+      <el-input
+        v-model="searchQuery"
+        placeholder="搜索商品名称/描述/SKU"
+        style="width: 200px; margin-left: 16px;"
+        clearable
+      />
+    </div>
+    
+    <!-- 商品列表 -->
+    <el-table
+      v-loading="loading"
+      :data="paginatedProducts"
+      style="width: 100%; margin-top: 20px;"
+    >
+      <el-table-column prop="name" label="商品名称" />
+      <el-table-column prop="sku" label="SKU" width="120" />
+      <el-table-column prop="price" label="价格" width="120">
+        <template #default="{ row }">
+          ¥{{ row.price.toFixed(2) }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="stock" label="库存" width="100" />
+      <el-table-column prop="category" label="分类" width="150" />
+      <el-table-column label="状态" width="100">
+        <template #default="{ row }">
+          <el-tag
+            :type="row.status === 1 ? 'success' : 'info'"
+            @click="toggleStatus(row)"
+            style="cursor: pointer;"
           >
-            <template #append>
-              <el-button @click="executeSearch">
-                <el-icon><Search /></el-icon>
-              </el-button>
-            </template>
-          </el-input>
-          <!-- 搜索历史下拉框 -->
-          <div v-if="showSearchHistory && searchHistory.length" class="search-history">
-            <div class="history-header">
-              <span>搜索历史</span>
-              <el-button link @click="clearSearchHistory">清空</el-button>
-            </div>
-            <div class="history-list">
-              <div
-                v-for="(item, index) in searchHistory"
-                :key="item.timestamp"
-                class="history-item"
-                @click="useSearchHistory(item)"
-              >
-                <el-icon><Search /></el-icon>
-                <span>{{ item.keyword }}</span>
-                <el-icon
-                  class="delete-icon"
-                  @click.stop="deleteSearchHistory(index)"
-                >
-                  <Delete />
-                </el-icon>
-              </div>
-            </div>
-          </div>
-        </div>
-        <el-cascader
-          v-model="selectedCategory"
-          :options="categories"
-          :props="{
-            expandTrigger: 'hover',
-            checkStrictly: true,
-            label: 'label',
-            value: 'value',
-            children: 'children',
-            emitPath: true,
-            multiple: false
-          }"
-          placeholder="选择分类"
-          clearable
-          @change="handleSearch"
-          style="width: 200px"
-          class="custom-cascader"
-        />
-        <el-select
-          v-model="filterStatus"
-          placeholder="商品状态"
-          clearable
-          @change="handleSearch"
-        >
-          <el-option label="全部" value="" />
-          <el-option label="已上架" value="1" />
-          <el-option label="已下架" value="0" />
-        </el-select>
-      </div>
-      <div class="right">
-        <el-button type="primary" @click="showAddDialog">
-          <el-icon><Plus /></el-icon>新增商品
-        </el-button>
-        <el-button :disabled="!selectedIds.length" @click="batchOperate('status')">
-          {{ selectedIds.length > 0 && goodsList.find(item => selectedIds.includes(item.id))?.status === 1 ? '批量下架' : '批量上架' }}
-        </el-button>
-        <el-button :disabled="!selectedIds.length" @click="batchOperate('delete')">
-          批量删除
-        </el-button>
-      </div>
+            {{ row.status === 1 ? '上架' : '下架' }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="200">
+        <template #default="{ row }">
+          <el-button size="small" @click="handleEdit(row)">编辑</el-button>
+          <el-button 
+            size="small" 
+            type="danger" 
+            @click="handleDelete(row)"
+          >删除</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <!-- 分页 -->
+    <div class="pagination">
+      <el-pagination
+        v-model:current-page="currentPage"
+        :page-size="pageSize"
+        :total="filteredProducts.length"
+        layout="prev, pager, next"
+        :pager-count="5"
+      />
     </div>
 
-    <!-- 商品表格和分页容器 -->
-    <div class="table-container">
-      <el-table
-        :data="goodsList"
-        v-loading="loading"
-        @selection-change="handleSelectionChange"
-        style="width: 100%"
-        height="calc(100vh - 280px)"
-        border
+    <!-- 添加/编辑商品对话框 -->
+    <el-dialog
+      :model-value="showAddDialog || showEditDialog"
+      @update:model-value="(val) => { showAddDialog = val; showEditDialog = val }"
+      :title="currentProduct?.id ? '编辑商品' : '添加商品'"
+      width="500px"
+    >
+      <el-form
+        :model="currentProduct"
+        label-width="80px"
+        v-if="currentProduct"
       >
-        <el-table-column type="selection" width="55" fixed />
-        <el-table-column label="商品信息" min-width="300" fixed>
-          <template #default="{ row }">
-            <div class="goods-info">
-              <el-image 
-                :src="row.thumb" 
-                :preview-src-list="[row.thumb]" 
-                fit="cover"
-                class="goods-thumb"
-              />
-              <div class="detail">
-                <div class="title">{{ row.name }}</div>
-                <div class="sku">SKU: {{ row.sku }}</div>
-              </div>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="category" label="分类" width="150" />
-        <el-table-column prop="price" label="价格" width="120">
-          <template #default="{ row }">
-            {{ formatCurrency(row.price) }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="stock" label="库存" width="100" />
-        <el-table-column label="状态" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag
-              :type="row.status === 1 ? 'success' : 'info'"
-              class="status-tag"
-              @click="changeStatus(row)"
-            >
-              {{ row.status === 1 ? '已上架' : '已下架' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right" align="center">
-          <template #default="{ row }">
-            <div class="operation-buttons">
-              <el-button link type="primary" @click="editGoods(row)">编辑</el-button>
-              <el-button link type="danger" @click="deleteGoods(row.id)">删除</el-button>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <!-- 分页 -->
-      <div class="pagination-container">
-        <el-pagination
-          v-model:current-page="currentPage"
-          v-model:page-size="pageSize"
-          :total="total"
-          layout="prev, pager, next"
-          :pager-count="4"
-          @size-change="handleSizeChange"
-          @current-change="handleCurrentChange"
-          background
-        />
-      </div>
-    </div>
-
-    <!-- 商品编辑弹窗 -->
-    <GoodsEditor 
-      v-model="showEditor"
-      :current-data="currentGoods"
-      @refresh="handleEditorRefresh"
-    />
+        <el-form-item label="商品名称">
+          <el-input v-model="currentProduct.name" />
+        </el-form-item>
+        <el-form-item label="SKU">
+          <el-input v-model="currentProduct.sku" />
+        </el-form-item>
+        <el-form-item label="价格">
+          <el-input-number v-model="currentProduct.price" :min="0" :precision="2" />
+        </el-form-item>
+        <el-form-item label="库存">
+          <el-input-number v-model="currentProduct.stock" :min="0" />
+        </el-form-item>
+        <el-form-item label="分类">
+          <el-cascader
+            v-model="selectedCategory"
+            :options="categories"
+            placeholder="选择分类"
+          />
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input
+            v-model="currentProduct.description"
+            type="textarea"
+            :rows="3"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="showAddDialog = false; showEditDialog = false">取消</el-button>
+          <el-button 
+            type="primary" 
+            @click="saveProduct(currentProduct)"
+          >
+            确定
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
-.goods-manage {
-  padding: 24px;
-  background: var(--bg-color);
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.products-container {
+  padding: 20px;
 }
 
-.operate-bar {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 20px;
-  gap: 12px;
-  flex-shrink: 0;
-}
-
-.operate-bar .left {
+.operations {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex: 1;
-}
-
-.search-box {
-  position: relative;
-  width: 300px;
-  flex-shrink: 0;
-}
-
-:deep(.el-cascader) {
-  width: 200px;
-  flex-shrink: 0;
-}
-
-:deep(.el-select) {
-  width: 120px;
-  flex-shrink: 0;
-}
-
-.operate-bar .right {
-  display: flex;
-  gap: 12px;
-  flex-shrink: 0;
-}
-
-.table-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background: white;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.pagination-container {
-  padding: 16px;
-  background: white;
-  border-top: 1px solid #ebeef5;
-  display: flex;
-  justify-content: flex-end;
-}
-
-.goods-info {
-  display: flex;
-  align-items: center;
-}
-
-.goods-thumb {
-  width: 60px;
-  height: 60px;
-  border-radius: 4px;
-  margin-right: 12px;
-}
-
-.goods-info .title {
-  font-weight: 500;
-  margin-bottom: 4px;
-}
-
-.goods-info .sku {
-  color: var(--text-secondary);
-  font-size: 0.8em;
+  margin-top: 20px;
 }
 
 .pagination {
-  margin-top: 8px;
-  display: flex;
-  justify-content: flex-end;
-  padding: 8px 0;
-  background: white;
-  border-radius: 4px;
-}
-
-.search-history {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background: white;
-  border-radius: 4px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-  z-index: 1000;
-  margin-top: 4px;
-  border: 1px solid #dcdfe6;
-}
-
-.history-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 12px;
-  border-bottom: 1px solid #eee;
-  background-color: #f5f7fa;
-}
-
-.history-list {
-  max-height: 300px;
-  overflow-y: auto;
-  background-color: white;
-}
-
-.history-item {
-  display: flex;
-  align-items: center;
-  padding: 8px 12px;
-  cursor: pointer;
-  transition: all 0.3s;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.history-item:last-child {
-  border-bottom: none;
-}
-
-.history-item:hover {
-  background-color: #f5f7fa;
-  color: var(--el-color-primary);
-}
-
-.history-item .el-icon {
-  margin-right: 8px;
-  color: #909399;
-}
-
-.history-item:hover .el-icon {
-  color: var(--el-color-primary);
-}
-
-.history-item .delete-icon {
-  margin-left: auto;
-  opacity: 0;
-  transition: opacity 0.3s;
-  color: #909399;
-}
-
-.history-item:hover .delete-icon {
-  opacity: 1;
-  color: #f56c6c;
-}
-
-.history-item span {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.status-tag {
-  cursor: pointer;
-  transition: all 0.3s;
-  padding: 0 12px;
-  height: 28px;
-  line-height: 28px;
-  border-radius: 4px;
-  text-align: center;
-  display: inline-block;
-  min-width: 60px;
-}
-
-.status-tag:hover {
-  opacity: 0.8;
-  transform: translateY(-1px);
-}
-
-:deep(.el-tag--success) {
-  background-color: #f0f9eb;
-  border-color: #e1f3d8;
-  color: #67c23a;
-}
-
-:deep(.el-tag--info) {
-  background-color: #f4f4f5;
-  border-color: #e9e9eb;
-  color: #909399;
-}
-
-:deep(.el-table) {
-  flex: 1;
-  overflow: hidden;
-  margin-bottom: 0;
-  background: white;
-  border-radius: 4px;
-}
-
-:deep(.el-table__body-wrapper) {
-  overflow-y: auto;
-  padding-bottom: 0;
-}
-
-:deep(.el-table__header-wrapper) {
-  overflow: hidden;
-}
-
-:deep(.el-table__fixed) {
-  height: 100% !important;
-}
-
-:deep(.el-table__fixed-right) {
-  height: 100% !important;
-}
-
-:deep(.el-pagination) {
-  padding: 0;
-  margin: 0;
-}
-
-:deep(.el-pagination .el-pagination__total) {
-  margin-right: 8px;
-}
-
-:deep(.el-pagination .el-pagination__sizes) {
-  margin-right: 8px;
-}
-
-:deep(.el-pagination .el-pagination__jump) {
-  margin-left: 8px;
-}
-
-:deep(.el-pagination .el-pager li) {
-  min-width: 32px;
-  height: 32px;
-  line-height: 32px;
-  margin: 0 4px;
-}
-
-:deep(.el-pagination .el-pager li.active) {
-  background-color: var(--el-color-primary);
-  color: white;
-}
-
-:deep(.el-pagination .el-pager li:not(.disabled):hover) {
-  color: var(--el-color-primary);
-}
-
-:deep(.el-pagination .el-pager li.disabled) {
-  color: #c0c4cc;
-  cursor: not-allowed;
-}
-
-.custom-cascader {
-  width: 200px;
-}
-
-:deep(.custom-cascader .el-cascader-node__prefix) {
-  display: none !important;
-}
-
-:deep(.custom-cascader .el-cascader-node__label) {
-  padding-left: 0 !important;
-  cursor: pointer !important;
-}
-
-:deep(.custom-cascader .el-cascader-node__label:hover) {
-  color: var(--el-color-primary) !important;
-}
-
-:deep(.custom-cascader .el-cascader-node.is-active > .el-cascader-node__label) {
-  color: var(--el-color-primary) !important;
-}
-
-:deep(.custom-cascader .el-cascader-node.is-checked > .el-cascader-node__label) {
-  color: var(--el-color-primary) !important;
-  font-weight: bold !important;
-}
-
-:deep(.custom-cascader .el-cascader-node__postfix) {
-  display: none !important;
-}
-
-.operation-buttons {
+  margin-top: 20px;
   display: flex;
   justify-content: center;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
   gap: 12px;
 }
 </style> 

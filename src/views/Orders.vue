@@ -1,1358 +1,606 @@
-<script setup>
-  import { ref, onMounted, onUnmounted } from 'vue'
-  import { ElMessage, ElMessageBox } from 'element-plus'
-  import { Search, Delete } from '@element-plus/icons-vue'
-  import { debounce } from 'lodash-es'
+<script setup lang="ts">
+import { ref, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox, ElTable, ElTableColumn, ElSelect, ElOption, ElInput, ElButton, ElPagination } from 'element-plus'
 
-  // 状态管理
-  const orders = ref([]) // 订单列表数据
-  const loading = ref(false) // 加载状态
-  const currentPage = ref(1) // 当前页码
-  const pageSize = ref(10) // 每页显示数量
-  const total = ref(0) // 订单总数
-  const selectedIds = ref([]) // 选中的订单ID列表
-  const detailVisible = ref(false) // 订单详情弹窗显示状态
-  const currentOrder = ref(null) // 当前查看的订单详情数据
+const router = useRouter()
 
-  // 搜索条件
-  const searchKey = ref('') // 搜索关键词
-  const filterStatus = ref('') // 订单状态筛选条件
-  const searchHistory = ref([]) // 搜索历史记录
-  const showSearchHistory = ref(false) // 是否显示搜索历史
+interface Order {
+  id: string
+  orderNo: string
+  customerName: string
+  totalAmount: number
+  status: number // 0: 待发货, 1: 已发货, 2: 已完成
+  createTime: string
+  products: {
+    name: string
+    quantity: number
+    price: number
+  }[]
+}
 
-  // 模拟订单数据
-  const defaultOrdersList = [
-    {
-      id: 1,
-      orderNo: 'ORD20240320001',
-      customerName: '张三',
-      phone: '13812345678',
-      address: '北京市朝阳区三里屯SOHO 2号楼 2201',
-      items: [
-        { id: 1, name: 'iPhone 15 Pro', price: 7999, quantity: 1 },
-        { id: 2, name: 'AirPods Pro', price: 1999, quantity: 1 }
-      ],
-      status: '已发货',
-      createTime: '2024-03-20 10:00:00'
-    },
-    {
-      id: 2,
-      orderNo: 'ORD20240320002',
-      customerName: '李四',
-      phone: '13987654321',
-      address: '上海市浦东新区陆家嘴环路1000号',
-      items: [
-        { id: 3, name: '小米智能音箱', price: 299, quantity: 2 },
-        { id: 4, name: '威露士洗衣液', price: 39.9, quantity: 3 }
-      ],
-      status: '已发货',
-      createTime: '2024-03-20 11:30:00'
-    },
-    {
-      id: 3,
-      orderNo: 'ORD20240320003',
-      customerName: '王五',
-      phone: '13765432109',
-      address: '广州市天河区珠江新城花城大道68号',
-      items: [
-        { id: 5, name: '不锈钢炒锅', price: 199, quantity: 1 },
-        { id: 6, name: '收纳盒', price: 29.9, quantity: 5 }
-      ],
-      status: '拣货中',
-      createTime: '2024-03-20 14:20:00'
-    },
-    {
-      id: 4,
-      orderNo: 'ORD20240320004',
-      customerName: '赵六',
-      phone: '13698765432',
-      address: '深圳市南山区科技园科技路1号',
-      items: [
-        { id: 7, name: 'Keep智能动感单车', price: 1999, quantity: 1 },
-        { id: 8, name: '小米智能跳绳', price: 99, quantity: 2 }
-      ],
-      status: '拣货中',
-      createTime: '2024-03-20 16:45:00'
-    },
-    {
-      id: 5,
-      orderNo: 'ORD20240320005',
-      customerName: '钱七',
-      phone: '13512345678',
-      address: '成都市武侯区人民南路四段1号',
-      items: [
-        { id: 9, name: '迪卡侬瑜伽垫', price: 49, quantity: 2 },
-        { id: 10, name: '北面冲锋衣', price: 1299, quantity: 1 }
-      ],
-      status: '待发货',
-      createTime: '2024-03-20 18:30:00'
-    },
-    {
-      id: 6,
-      orderNo: 'ORD20240320006',
-      customerName: '孙八',
-      phone: '13487654321',
-      address: '杭州市西湖区文三路478号',
-      items: [
-        { id: 11, name: '探路者登山包', price: 399, quantity: 1 },
-        { id: 12, name: '牧高笛帐篷', price: 599, quantity: 1 }
-      ],
-      status: '待发货',
-      createTime: '2024-03-20 20:15:00'
-    },
-    {
-      id: 7,
-      orderNo: 'ORD20240320007',
-      customerName: '周九',
-      phone: '13365432109',
-      address: '武汉市洪山区珞瑜路1037号',
-      items: [
-        { id: 13, name: '安踏运动短裤', price: 89, quantity: 3 },
-        { id: 14, name: '李宁速干T恤', price: 79, quantity: 2 }
-      ],
-      status: '待发货',
-      createTime: '2024-03-20 21:00:00'
-    },
-    {
-      id: 8,
-      orderNo: 'ORD20240320008',
-      customerName: '吴十',
-      phone: '13298765432',
-      address: '南京市玄武区珠江路1号',
-      items: [
-        { id: 15, name: '耐克运动袜', price: 39, quantity: 5 },
-        { id: 16, name: '三只松鼠坚果礼盒', price: 99, quantity: 2 }
-      ],
-      status: '待发货',
-      createTime: '2024-03-20 22:30:00'
-    },
-    {
-      id: 9,
-      orderNo: 'ORD20240320009',
-      customerName: '郑十一',
-      phone: '13112345678',
-      address: '重庆市渝中区解放碑步行街1号',
-      items: [
-        { id: 17, name: '百草味肉脯', price: 29.9, quantity: 4 },
-        { id: 18, name: '良品铺子薯片', price: 9.9, quantity: 10 }
-      ],
-      status: '待发货',
-      createTime: '2024-03-20 23:15:00'
-    },
-    {
-      id: 10,
-      orderNo: 'ORD20240320010',
-      customerName: '王十二',
-      phone: '13087654321',
-      address: '西安市碑林区南院门1号',
-      items: [
-        { id: 19, name: '茅台酒', price: 1499, quantity: 1 },
-        { id: 20, name: '青岛啤酒', price: 6.5, quantity: 12 }
-      ],
-      status: '待发货',
-      createTime: '2024-03-20 23:45:00'
-    },
-    {
-      id: 11,
-      orderNo: 'ORD20240319001',
-      customerName: '陈一',
-      phone: '13912345678',
-      address: '北京市海淀区中关村科技园区',
-      items: [
-        { id: 21, name: '华为Mate60 Pro', price: 6999, quantity: 1 },
-        { id: 22, name: '华为Watch GT4', price: 2499, quantity: 1 }
-      ],
-      status: '已发货',
-      createTime: '2024-03-19 09:15:00'
-    },
-    {
-      id: 12,
-      orderNo: 'ORD20240319002',
-      customerName: '刘二',
-      phone: '13887654321',
-      address: '上海市徐汇区漕河泾开发区',
-      items: [
-        { id: 23, name: '小米14 Ultra', price: 5999, quantity: 1 },
-        { id: 24, name: '小米平板6 Pro', price: 2999, quantity: 1 }
-      ],
-      status: '已发货',
-      createTime: '2024-03-19 10:30:00'
-    },
-    {
-      id: 13,
-      orderNo: 'ORD20240319003',
-      customerName: '张三',
-      phone: '13765432109',
-      address: '广州市越秀区北京路步行街',
-      items: [
-        { id: 25, name: 'OPPO Find X7', price: 4999, quantity: 1 },
-        { id: 26, name: 'OPPO Enco X3', price: 999, quantity: 1 }
-      ],
-      status: '已发货',
-      createTime: '2024-03-19 11:45:00'
-    },
-    {
-      id: 14,
-      orderNo: 'ORD20240319004',
-      customerName: '李四',
-      phone: '13698765432',
-      address: '深圳市福田区华强北电子市场',
-      items: [
-        { id: 27, name: 'vivo X100 Pro', price: 5499, quantity: 1 },
-        { id: 28, name: 'vivo TWS 3', price: 799, quantity: 1 }
-      ],
-      status: '已发货',
-      createTime: '2024-03-19 13:20:00'
-    },
-    {
-      id: 15,
-      orderNo: 'ORD20240319005',
-      customerName: '王五',
-      phone: '13512345678',
-      address: '成都市武侯区春熙路',
-      items: [
-        { id: 29, name: '一加12', price: 4299, quantity: 1 },
-        { id: 30, name: '一加Buds Pro 2', price: 899, quantity: 1 }
-      ],
-      status: '已发货',
-      createTime: '2024-03-19 14:35:00'
-    },
-    {
-      id: 16,
-      orderNo: 'ORD20240319006',
-      customerName: '赵六',
-      phone: '13487654321',
-      address: '杭州市西湖区湖滨银泰',
-      items: [
-        { id: 31, name: '魅族21', price: 3299, quantity: 1 },
-        { id: 32, name: '魅族PANDAER耳机', price: 299, quantity: 1 }
-      ],
-      status: '已发货',
-      createTime: '2024-03-19 15:50:00'
-    },
-    {
-      id: 17,
-      orderNo: 'ORD20240319007',
-      customerName: '钱七',
-      phone: '13365432109',
-      address: '武汉市江汉区江汉路步行街',
-      items: [
-        { id: 33, name: '努比亚Z60 Ultra', price: 3999, quantity: 1 },
-        { id: 34, name: '努比亚NeoAir', price: 499, quantity: 1 }
-      ],
-      status: '已发货',
-      createTime: '2024-03-19 17:05:00'
-    },
-    {
-      id: 18,
-      orderNo: 'ORD20240319008',
-      customerName: '孙八',
-      phone: '13298765432',
-      address: '南京市玄武区新街口',
-      items: [
-        { id: 35, name: 'ROG Phone 8', price: 5999, quantity: 1 },
-        { id: 36, name: 'ROG Cetra II', price: 1299, quantity: 1 }
-      ],
-      status: '已发货',
-      createTime: '2024-03-19 18:20:00'
-    },
-    {
-      id: 19,
-      orderNo: 'ORD20240319009',
-      customerName: '周九',
-      phone: '13112345678',
-      address: '重庆市渝中区解放碑',
-      items: [
-        { id: 37, name: '红魔9 Pro', price: 4599, quantity: 1 },
-        { id: 38, name: '红魔TWS', price: 399, quantity: 1 }
-      ],
-      status: '已发货',
-      createTime: '2024-03-19 19:35:00'
-    },
-    {
-      id: 20,
-      orderNo: 'ORD20240319010',
-      customerName: '吴十',
-      phone: '13087654321',
-      address: '西安市碑林区钟楼',
-      items: [
-        { id: 39, name: '黑鲨5 Pro', price: 3799, quantity: 1 },
-        { id: 40, name: '黑鲨耳机', price: 299, quantity: 1 }
-      ],
-      status: '已发货',
-      createTime: '2024-03-19 20:50:00'
-    }
-  ]
+interface StatusOption {
+  value: number | string
+  label: string
+}
 
-  // 模拟物流数据
-  const logisticsData = {
-    'ORD001': [
-      { time: '2024-03-20 10:30:00', status: '订单已创建', location: '系统' },
-      { time: '2024-03-20 10:35:00', status: '订单已支付', location: '系统' },
-      { time: '2024-03-20 11:00:00', status: '订单已确认', location: '系统' }
-    ],
-    'ORD002': [
-      { time: '2024-03-19 15:45:00', status: '订单已创建', location: '系统' },
-      { time: '2024-03-19 15:50:00', status: '订单已支付', location: '系统' },
-      { time: '2024-03-19 16:00:00', status: '订单已确认', location: '系统' },
-      { time: '2024-03-19 16:30:00', status: '已发货', location: '北京市朝阳区' },
-      { time: '2024-03-19 17:00:00', status: '运输中', location: '北京市朝阳区' }
-    ],
-    'ORD003': [
-      { time: '2024-03-18 09:15:00', status: '订单已创建', location: '系统' },
-      { time: '2024-03-18 09:20:00', status: '订单已支付', location: '系统' },
-      { time: '2024-03-18 09:30:00', status: '订单已确认', location: '系统' },
-      { time: '2024-03-18 10:00:00', status: '已发货', location: '上海市浦东新区' },
-      { time: '2024-03-18 11:00:00', status: '运输中', location: '上海市浦东新区' },
-      { time: '2024-03-18 14:00:00', status: '已送达', location: '上海市浦东新区' },
-      { time: '2024-03-18 14:30:00', status: '已完成', location: '上海市浦东新区' }
+const orders = ref<Order[]>([])
+const loading = ref(false)
+const searchQuery = ref('')
+const selectedStatus = ref<number | string>('')
+const currentPage = ref(1)
+const pageSize = ref(10)
+
+// 订单状态选项
+const statusOptions: StatusOption[] = [
+  { value: '', label: '全部状态' },
+  { value: 0, label: '待发货' },
+  { value: 1, label: '已发货' },
+  { value: 2, label: '已完成' }
+]
+
+// 默认订单数据
+const defaultOrders: Order[] = [
+  {
+    id: '1',
+    orderNo: 'ORD202403150001',
+    customerName: '张明',
+    totalAmount: 9999,
+    status: 0,
+    createTime: '2024-03-15 10:30:00',
+    products: [
+      { name: 'Apple iPhone 15 Pro Max 256GB 钛金属', quantity: 1, price: 9999 }
+    ]
+  },
+  {
+    id: '2',
+    orderNo: 'ORD202403150002',
+    customerName: '李华',
+    totalAmount: 12999,
+    status: 1,
+    createTime: '2024-03-15 11:15:00',
+    products: [
+      { name: 'Apple MacBook Pro 16英寸 M3 Max 32GB 1TB', quantity: 1, price: 12999 }
+    ]
+  },
+  {
+    id: '3',
+    orderNo: 'ORD202403150003',
+    customerName: '王芳',
+    totalAmount: 1999,
+    status: 2,
+    createTime: '2024-03-15 14:20:00',
+    products: [
+      { name: 'Apple AirPods Pro 2代 主动降噪', quantity: 1, price: 1999 }
+    ]
+  },
+  {
+    id: '4',
+    orderNo: 'ORD202403150004',
+    customerName: '赵静',
+    totalAmount: 7999,
+    status: 0,
+    createTime: '2024-03-15 15:30:00',
+    products: [
+      { name: 'Apple iPad Pro 12.9英寸 M2 256GB', quantity: 1, price: 7999 }
+    ]
+  },
+  {
+    id: '5',
+    orderNo: 'ORD202403150005',
+    customerName: '钱伟',
+    totalAmount: 5999,
+    status: 1,
+    createTime: '2024-03-15 16:45:00',
+    products: [
+      { name: 'Apple Watch Ultra 2 49mm', quantity: 1, price: 5999 }
+    ]
+  },
+  {
+    id: '6',
+    orderNo: 'ORD202403150006',
+    customerName: '孙丽',
+    totalAmount: 1499,
+    status: 2,
+    createTime: '2024-03-15 17:20:00',
+    products: [
+      { name: 'Apple Pencil 2代', quantity: 1, price: 1499 }
+    ]
+  },
+  {
+    id: '7',
+    orderNo: 'ORD202403150007',
+    customerName: '周强',
+    totalAmount: 2999,
+    status: 0,
+    createTime: '2024-03-15 18:10:00',
+    products: [
+      { name: 'Apple HomePod mini', quantity: 2, price: 1499 }
+    ]
+  },
+  {
+    id: '8',
+    orderNo: 'ORD202403150008',
+    customerName: '吴婷',
+    totalAmount: 8999,
+    status: 1,
+    createTime: '2024-03-15 19:30:00',
+    products: [
+      { name: 'Apple Mac mini M2 16GB 512GB', quantity: 1, price: 8999 }
+    ]
+  },
+  {
+    id: '9',
+    orderNo: 'ORD202403150009',
+    customerName: '郑阳',
+    totalAmount: 3999,
+    status: 2,
+    createTime: '2024-03-15 20:15:00',
+    products: [
+      { name: 'Apple Studio Display', quantity: 1, price: 3999 }
+    ]
+  },
+  {
+    id: '10',
+    orderNo: 'ORD202403150010',
+    customerName: '王磊',
+    totalAmount: 2499,
+    status: 0,
+    createTime: '2024-03-15 21:00:00',
+    products: [
+      { name: 'Apple Magic Keyboard', quantity: 1, price: 2499 }
+    ]
+  },
+  {
+    id: '11',
+    orderNo: 'ORD202403150011',
+    customerName: '李娜',
+    totalAmount: 999,
+    status: 1,
+    createTime: '2024-03-15 22:30:00',
+    products: [
+      { name: 'Apple Magic Mouse', quantity: 1, price: 999 }
+    ]
+  },
+  {
+    id: '12',
+    orderNo: 'ORD202403150012',
+    customerName: '张伟',
+    totalAmount: 1999,
+    status: 2,
+    createTime: '2024-03-15 23:15:00',
+    products: [
+      { name: 'Apple AirTag 4件装', quantity: 1, price: 1999 }
+    ]
+  },
+  {
+    id: '13',
+    orderNo: 'ORD202403160001',
+    customerName: '刘洋',
+    totalAmount: 12999,
+    status: 0,
+    createTime: '2024-03-16 09:30:00',
+    products: [
+      { name: 'Apple MacBook Air 15英寸 M2 16GB 512GB', quantity: 1, price: 12999 }
+    ]
+  },
+  {
+    id: '14',
+    orderNo: 'ORD202403160002',
+    customerName: '陈静',
+    totalAmount: 7999,
+    status: 1,
+    createTime: '2024-03-16 10:45:00',
+    products: [
+      { name: 'Apple iPad Air 10.9英寸 M1 256GB', quantity: 1, price: 7999 }
+    ]
+  },
+  {
+    id: '15',
+    orderNo: 'ORD202403160003',
+    customerName: '杨帆',
+    totalAmount: 5999,
+    status: 2,
+    createTime: '2024-03-16 11:20:00',
+    products: [
+      { name: 'Apple Watch Series 9 45mm', quantity: 1, price: 5999 }
+    ]
+  },
+  {
+    id: '16',
+    orderNo: 'ORD202403160004',
+    customerName: '黄晓',
+    totalAmount: 1499,
+    status: 0,
+    createTime: '2024-03-16 13:30:00',
+    products: [
+      { name: 'Apple Pencil 2代', quantity: 1, price: 1499 }
+    ]
+  },
+  {
+    id: '17',
+    orderNo: 'ORD202403160005',
+    customerName: '赵琳',
+    totalAmount: 2999,
+    status: 1,
+    createTime: '2024-03-16 14:45:00',
+    products: [
+      { name: 'Apple HomePod mini', quantity: 2, price: 1499 }
+    ]
+  },
+  {
+    id: '18',
+    orderNo: 'ORD202403160006',
+    customerName: '周杰',
+    totalAmount: 8999,
+    status: 2,
+    createTime: '2024-03-16 15:20:00',
+    products: [
+      { name: 'Apple Mac mini M2 16GB 512GB', quantity: 1, price: 8999 }
+    ]
+  },
+  {
+    id: '19',
+    orderNo: 'ORD202403160007',
+    customerName: '吴佳',
+    totalAmount: 3999,
+    status: 0,
+    createTime: '2024-03-16 16:30:00',
+    products: [
+      { name: 'Apple Studio Display', quantity: 1, price: 3999 }
+    ]
+  },
+  {
+    id: '20',
+    orderNo: 'ORD202403160008',
+    customerName: '郑浩',
+    totalAmount: 2499,
+    status: 1,
+    createTime: '2024-03-16 17:45:00',
+    products: [
+      { name: 'Apple Magic Keyboard', quantity: 1, price: 2499 }
+    ]
+  },
+  {
+    id: '21',
+    orderNo: 'ORD202403160009',
+    customerName: '王琳',
+    totalAmount: 999,
+    status: 2,
+    createTime: '2024-03-16 18:20:00',
+    products: [
+      { name: 'Apple Magic Mouse', quantity: 1, price: 999 }
+    ]
+  },
+  {
+    id: '22',
+    orderNo: 'ORD202403160010',
+    customerName: '李强',
+    totalAmount: 1999,
+    status: 0,
+    createTime: '2024-03-16 19:30:00',
+    products: [
+      { name: 'Apple AirTag 4件装', quantity: 1, price: 1999 }
+    ]
+  },
+  {
+    id: '23',
+    orderNo: 'ORD202403160011',
+    customerName: '张婷',
+    totalAmount: 12999,
+    status: 1,
+    createTime: '2024-03-16 20:45:00',
+    products: [
+      { name: 'Apple MacBook Air 15英寸 M2 16GB 512GB', quantity: 1, price: 12999 }
+    ]
+  },
+  {
+    id: '24',
+    orderNo: 'ORD202403160012',
+    customerName: '刘芳',
+    totalAmount: 7999,
+    status: 2,
+    createTime: '2024-03-16 21:20:00',
+    products: [
+      { name: 'Apple iPad Air 10.9英寸 M1 256GB', quantity: 1, price: 7999 }
+    ]
+  },
+  {
+    id: '25',
+    orderNo: 'ORD202403160013',
+    customerName: '陈伟',
+    totalAmount: 5999,
+    status: 0,
+    createTime: '2024-03-16 22:30:00',
+    products: [
+      { name: 'Apple Watch Series 9 45mm', quantity: 1, price: 5999 }
+    ]
+  },
+  {
+    id: '26',
+    orderNo: 'ORD202403160014',
+    customerName: '杨静',
+    totalAmount: 1499,
+    status: 1,
+    createTime: '2024-03-16 23:45:00',
+    products: [
+      { name: 'Apple Pencil 2代', quantity: 1, price: 1499 }
+    ]
+  },
+  {
+    id: '27',
+    orderNo: 'ORD202403170001',
+    customerName: '黄强',
+    totalAmount: 2999,
+    status: 2,
+    createTime: '2024-03-17 09:20:00',
+    products: [
+      { name: 'Apple HomePod mini', quantity: 2, price: 1499 }
+    ]
+  },
+  {
+    id: '28',
+    orderNo: 'ORD202403170002',
+    customerName: '赵婷',
+    totalAmount: 8999,
+    status: 0,
+    createTime: '2024-03-17 10:30:00',
+    products: [
+      { name: 'Apple Mac mini M2 16GB 512GB', quantity: 1, price: 8999 }
+    ]
+  },
+  {
+    id: '29',
+    orderNo: 'ORD202403170003',
+    customerName: '周芳',
+    totalAmount: 3999,
+    status: 1,
+    createTime: '2024-03-17 11:45:00',
+    products: [
+      { name: 'Apple Studio Display', quantity: 1, price: 3999 }
+    ]
+  },
+  {
+    id: '30',
+    orderNo: 'ORD202403170004',
+    customerName: '吴伟',
+    totalAmount: 2499,
+    status: 2,
+    createTime: '2024-03-17 12:20:00',
+    products: [
+      { name: 'Apple Magic Keyboard', quantity: 1, price: 2499 }
     ]
   }
+]
 
-  /**
-  * 计算订单总金额
-  * @param {Array} items - 订单商品列表
-  * @returns {number} 订单总金额
-  */
-  const calculateTotal = (items) => {
-    return items.reduce((sum, item) => sum + item.price * item.quantity, 0)
-  }
-
-  /**
-  * 从本地存储获取订单数据
-  * @returns {Array|null} 订单数据列表
-  */
-  const getLocalOrdersData = () => {
-    const data = localStorage.getItem('ordersList')
-    return data ? JSON.parse(data) : null
-  }
-
-  /**
-  * 保存订单数据到本地存储
-  * @param {Array} data - 订单数据列表
-  */
-  const saveOrdersData = (data) => {
-    localStorage.setItem('ordersList', JSON.stringify(data))
-  }
-
-  /**
-  * 获取订单列表数据
-  * 包含搜索、筛选、分页等处理逻辑
-  */
-  const fetchOrdersList = () => {
-    loading.value = true
-    try {
-      // 从本地存储获取数据
-      const localData = localStorage.getItem('ordersList')
-      let allData = []
-      
-      if (localData) {
-        allData = JSON.parse(localData)
-      } else {
-        allData = defaultOrdersList
-        localStorage.setItem('ordersList', JSON.stringify(defaultOrdersList))
-      }
-      
-      // 应用筛选条件
-      let filteredData = [...allData]
-      
-      // 搜索关键词过滤
-      if (searchKey.value) {
-        const keyword = searchKey.value.toLowerCase()
-        filteredData = filteredData.filter(item => 
-          item.orderNo.toLowerCase().includes(keyword) ||
-          item.customerName.toLowerCase().includes(keyword) ||
-          item.phone.includes(keyword)
-        )
-      }
-      
-      // 状态过滤
-      if (filterStatus.value !== '') {
-        filteredData = filteredData.filter(item => item.status === filterStatus.value)
-      }
-      
-      // 按创建时间降序排序
-      filteredData.sort((a, b) => {
-        return new Date(b.createTime) - new Date(a.createTime)
-      })
-      
-      // 更新总数
-      total.value = filteredData.length
-      
-      // 分页处理
-      const start = (currentPage.value - 1) * pageSize.value
-      const end = start + pageSize.value
-      orders.value = filteredData.slice(start, end)
-    } catch (error) {
-      console.error('获取订单列表失败:', error)
-      ElMessage.error('获取订单列表失败')
-    } finally {
-      loading.value = false
-    }
-  }
-
-  /**
-  * 处理每页显示数量变化
-  * @param {number} val - 新的每页显示数量
-  */
-  const handleSizeChange = (val) => {
-    pageSize.value = val
-    currentPage.value = 1
-    fetchOrdersList()
-  }
-
-  /**
-  * 处理页码变化
-  * @param {number} val - 新的页码
-  */
-  const handleCurrentChange = (val) => {
-    currentPage.value = val
-    fetchOrdersList()
-  }
-
-  /**
-  * 搜索处理函数（使用防抖）
-  * 延迟300ms执行搜索，避免频繁请求
-  */
-  const handleSearch = debounce(() => {
-    currentPage.value = 1
-    fetchOrdersList()
-  }, 300)
-
-  /**
-  * 执行搜索操作
-  * 包含添加搜索历史记录
-  */
-  const executeSearch = () => {
-    addSearchHistory()
-    handleSearch()
-  }
-
-  /**
-  * 添加搜索历史记录
-  * 最多保存10条记录
-  */
-  const addSearchHistory = () => {
-    if (searchKey.value) {
-      const history = {
-        keyword: searchKey.value,
-        status: filterStatus.value,
-        timestamp: Date.now()
-      }
-      searchHistory.value.unshift(history)
-      if (searchHistory.value.length > 10) {
-        searchHistory.value.pop()
-      }
-      localStorage.setItem('ordersSearchHistory', JSON.stringify(searchHistory.value))
-    }
-  }
-
-  /**
-  * 使用搜索历史记录
-  * @param {Object} history - 搜索历史记录项
-  */
-  const useSearchHistory = (history) => {
-    searchKey.value = history.keyword
-    filterStatus.value = history.status
-    executeSearch()
-    showSearchHistory.value = false
-  }
-
-  /**
-  * 删除搜索历史记录
-  * @param {number} index - 要删除的记录索引
-  */
-  const deleteSearchHistory = (index) => {
-    searchHistory.value.splice(index, 1)
-    localStorage.setItem('ordersSearchHistory', JSON.stringify(searchHistory.value))
-  }
-
-  /**
-  * 清空搜索历史记录
-  */
-  const clearSearchHistory = () => {
-    searchHistory.value = []
-    localStorage.removeItem('ordersSearchHistory')
-  }
-
-  /**
-  * 初始化搜索历史记录
-  * 从本地存储加载历史记录
-  */
-  const initSearchHistory = () => {
-    const history = localStorage.getItem('ordersSearchHistory')
-    if (history) {
-      searchHistory.value = JSON.parse(history)
-    }
-  }
-
-  /**
-  * 重置搜索条件
-  */
-  const resetSearch = () => {
-    searchKey.value = ''
-    filterStatus.value = ''
-    executeSearch()
-  }
-
-  /**
-  * 处理表格选择变化
-  * @param {Array} selection - 选中的行数据
-  */
-  const handleSelectionChange = (selection) => {
-    selectedIds.value = selection.map(item => item.id)
-  }
-
-  /**
-  * 处理单个订单发货
-  * 包含库存检查、状态更新、物流记录等操作
-  * @param {Object} row - 订单数据
-  */
-  const handleShip = (row) => {
-    ElMessageBox.confirm('确认要发货吗？', '提示').then(async () => {
-      try {
-        // 检查库存
-        const goodsData = localStorage.getItem('goodsList')
-        const goods = goodsData ? JSON.parse(goodsData) : []
-        
-        // 检查每个商品的库存
-        for (const item of row.items) {
-          const good = goods.find(g => g.name.trim() === item.name.trim())
-          if (!good) {
-            console.error('商品不存在:', item.name)
-            ElMessage.error(`商品 ${item.name} 不存在`)
-            return
-          }
-          if (good.stock < item.quantity) {
-            console.error('库存不足:', item.name, '需要:', item.quantity, '实际:', good.stock)
-            ElMessage.error(`商品 ${item.name} 库存不足，当前库存: ${good.stock}`)
-            return
-          }
-        }
-        
-        const localData = localStorage.getItem('ordersList')
-        let allData = localData ? JSON.parse(localData) : defaultOrdersList
-        
-        // 更新订单状态
-        allData = allData.map(item => {
-          if (item.id === row.id) {
-            return { ...item, status: '拣货中' }
-          }
-          return item
-        })
-        
-        // 更新库存
-        const updatedGoods = goods.map(good => {
-          const orderItem = row.items.find(item => item.name.trim() === good.name.trim())
-          if (orderItem) {
-            return { ...good, stock: good.stock - orderItem.quantity }
-          }
-          return good
-        })
-        
-        // 更新物流数据
-        const currentTime = new Date().toLocaleString('zh-CN', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: false
-        }).replace(/\//g, '-')
-        
-        // 确保物流数据存在
-        if (!logisticsData[row.id]) {
-          logisticsData[row.id] = []
-        }
-        
-        // 添加新的物流记录
-        logisticsData[row.id].push({
-          time: currentTime,
-          status: '正在拣货',
-          location: '仓库'
-        })
-        
-        // 保存所有更新
-        localStorage.setItem('ordersList', JSON.stringify(allData))
-        localStorage.setItem('goodsList', JSON.stringify(updatedGoods))
-        localStorage.setItem('logisticsData', JSON.stringify(logisticsData))
-        
-        ElMessage.success('发货成功')
-        fetchOrdersList()
-      } catch (error) {
-        console.error('发货失败:', error)
-        ElMessage.error('发货失败: ' + error.message)
-      }
-    })
-  }
-
-  /**
-  * 批量发货处理
-  * 包含库存检查、状态更新、物流记录等操作
-  */
-  const batchShip = () => {
-    if (!selectedIds.value.length) {
-      ElMessage.warning('请选择要发货的订单')
-      return
-    }
-    
-    ElMessageBox.confirm('确认要批量发货吗？', '提示').then(async () => {
-      try {
-        // 检查库存
-        const goodsData = localStorage.getItem('goodsList')
-        const goods = goodsData ? JSON.parse(goodsData) : []
-        const localData = localStorage.getItem('ordersList')
-        let allData = localData ? JSON.parse(localData) : defaultOrdersList
-        
-        // 检查所有选中订单的库存
-        for (const orderId of selectedIds.value) {
-          const order = allData.find(o => o.id === orderId)
-          if (order && order.status === '待发货') {
-            for (const item of order.items) {
-              const good = goods.find(g => g.name.trim() === item.name.trim())
-              if (!good) {
-                console.error('商品不存在:', item.name)
-                ElMessage.error(`订单 ${order.orderNo} 中的商品 ${item.name} 不存在`)
-                return
-              }
-              if (good.stock < item.quantity) {
-                console.error('库存不足:', item.name, '需要:', item.quantity, '实际:', good.stock)
-                ElMessage.error(`订单 ${order.orderNo} 中的商品 ${item.name} 库存不足，当前库存: ${good.stock}`)
-                return
-              }
-            }
-          }
-        }
-        
-        const currentTime = new Date().toLocaleString('zh-CN', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: false
-        }).replace(/\//g, '-')
-        
-        // 更新订单状态和库存
-        let updatedGoods = [...goods]
-        allData = allData.map(item => {
-          if (selectedIds.value.includes(item.id) && item.status === '待发货') {
-            // 更新库存
-            item.items.forEach(orderItem => {
-              const goodIndex = updatedGoods.findIndex(g => g.name.trim() === orderItem.name.trim())
-              if (goodIndex !== -1) {
-                updatedGoods[goodIndex] = {
-                  ...updatedGoods[goodIndex],
-                  stock: updatedGoods[goodIndex].stock - orderItem.quantity
-                }
-              }
-            })
-            
-            // 确保物流数据存在
-            if (!logisticsData[item.id]) {
-              logisticsData[item.id] = []
-            }
-            
-            // 添加新的物流记录
-            logisticsData[item.id].push({
-              time: currentTime,
-              status: '正在拣货',
-              location: '仓库'
-            })
-            
-            return { ...item, status: '拣货中' }
-          }
-          return item
-        })
-        
-        // 保存所有更新
-        localStorage.setItem('ordersList', JSON.stringify(allData))
-        localStorage.setItem('goodsList', JSON.stringify(updatedGoods))
-        localStorage.setItem('logisticsData', JSON.stringify(logisticsData))
-        
-        ElMessage.success('批量发货成功')
-        fetchOrdersList()
-      } catch (error) {
-        console.error('批量发货失败:', error)
-        ElMessage.error('批量发货失败: ' + error.message)
-      }
-    })
-  }
-
-  /**
-  * 查看订单详情
-  * @param {Object} row - 订单数据
-  */
-  const viewDetail = (row) => {
-    currentOrder.value = row
-    detailVisible.value = true
-  }
-
-  /**
-  * 关闭订单详情弹窗
-  */
-  const closeDetail = () => {
-    detailVisible.value = false
-    currentOrder.value = null
-  }
-
-  /**
-  * 点击外部关闭搜索历史
-  * @param {Event} event - 点击事件对象
-  */
-  const handleClickOutside = (event) => {
-    const searchBox = document.querySelector('.search-box')
-    if (searchBox && !searchBox.contains(event.target)) {
-      showSearchHistory.value = false
-    }
-  }
-
-  /**
-  * 获取订单状态对应的标签类型
-  * @param {string} status - 订单状态
-  * @returns {string} 标签类型
-  */
-  const getStatusType = (status) => {
-    switch (status) {
-      case '拣货中':
-        return 'success'
-      case '已发货':
-        return 'warning'
-      case '待发货':
-        return 'danger'
-      default:
-        return 'info'
-    }
-  }
-
-  // 组件生命周期钩子
-  onMounted(() => {
-    // 清除旧的本地存储数据，确保使用最新的默认数据
+// 获取订单列表数据
+const fetchOrders = async () => {
+  loading.value = true
+  try {
+    // 清除本地存储，确保使用新的默认数据
     localStorage.removeItem('ordersList')
     
-    // 保存默认订单数据到本地存储
-    localStorage.setItem('ordersList', JSON.stringify(defaultOrdersList))
-    
-    // 初始化物流数据
-    const logisticsLocalData = localStorage.getItem('logisticsData')
-    if (logisticsLocalData) {
-      Object.assign(logisticsData, JSON.parse(logisticsLocalData))
+    // 从本地存储获取数据
+    const localData = localStorage.getItem('ordersList')
+    if (localData) {
+      // 如果本地存储有数据，检查是否需要更新
+      const localOrders = JSON.parse(localData)
+      // 确保所有订单的 totalAmount 是数字类型
+      const validatedOrders = localOrders.map((order: Order) => ({
+        ...order,
+        totalAmount: Number(order.totalAmount) || 0
+      }))
+      const localOrderIds = validatedOrders.map((o: Order) => o.id)
+      
+      // 如果本地数据中缺少默认数据中的某些订单，则合并数据
+      const missingOrders = defaultOrders.filter(o => !localOrderIds.includes(o.id))
+      if (missingOrders.length > 0) {
+        const updatedOrders = [...validatedOrders, ...missingOrders]
+        localStorage.setItem('ordersList', JSON.stringify(updatedOrders))
+        orders.value = updatedOrders
+      } else {
+        orders.value = validatedOrders
+      }
+    } else {
+      // 如果没有本地数据，使用默认数据
+      orders.value = defaultOrders
+      localStorage.setItem('ordersList', JSON.stringify(defaultOrders))
     }
-    
-    // 获取订单列表
-    fetchOrdersList()
-    initSearchHistory()
-    document.addEventListener('click', handleClickOutside)
-  })
+  } catch (error) {
+    console.error('获取订单列表失败:', error)
+    ElMessage.error('获取订单列表失败')
+    // 如果出错，使用默认数据
+    orders.value = defaultOrders
+  } finally {
+    loading.value = false
+  }
+}
 
-  onUnmounted(() => {
-    document.removeEventListener('click', handleClickOutside)
-  })
+// 更新订单状态
+const updateOrderStatus = async (order: Order, newStatus: number) => {
+  try {
+    const statusText = ['待发货', '已发货', '已完成'][newStatus]
+    await ElMessageBox.confirm(`确认将订单状态更新为"${statusText}"吗？`, '提示', {
+      type: 'warning'
+    })
+    
+    // 从本地存储获取数据
+    const localData = localStorage.getItem('ordersList')
+    if (localData) {
+      const ordersList = JSON.parse(localData)
+      const updatedList = ordersList.map((o: Order) => {
+        if (o.id === order.id) {
+          return { ...o, status: newStatus }
+        }
+        return o
+      })
+      localStorage.setItem('ordersList', JSON.stringify(updatedList))
+      orders.value = updatedList
+      ElMessage.success('订单状态更新成功')
+    }
+  } catch (error) {
+    console.error('更新订单状态失败:', error)
+  }
+}
+
+// 过滤后的订单列表
+const filteredOrders = computed(() => {
+  let result = [...orders.value]
+  
+  // 按状态过滤
+  if (selectedStatus.value !== '') {
+    result = result.filter(order => order.status === selectedStatus.value)
+  }
+  
+  // 按搜索关键词过滤
+  if (searchQuery.value) {
+    const keyword = searchQuery.value.toLowerCase()
+    result = result.filter(order => 
+      order.orderNo.toLowerCase().includes(keyword) ||
+      order.customerName.toLowerCase().includes(keyword)
+    )
+  }
+  
+  return result
+})
+
+// 分页后的订单列表
+const paginatedOrders = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  const end = start + pageSize.value
+  return filteredOrders.value.slice(start, end)
+})
+
+// 删除订单
+const handleDelete = async (order: Order) => {
+  try {
+    await ElMessageBox.confirm('确认要删除该订单吗？', '提示', {
+      type: 'warning'
+    })
+    
+    // 从本地存储获取数据
+    const localData = localStorage.getItem('ordersList')
+    if (localData) {
+      const ordersList = JSON.parse(localData)
+      const updatedList = ordersList.filter((o: Order) => o.id !== order.id)
+      localStorage.setItem('ordersList', JSON.stringify(updatedList))
+      orders.value = updatedList
+      ElMessage.success('删除成功')
+    }
+  } catch (error) {
+    console.error('删除订单失败:', error)
+  }
+}
+
+// 添加路由跳转方法
+const navigateTo = (path: string) => {
+  router.push(path)
+}
+
+onMounted(() => {
+  fetchOrders()
+})
 </script>
 
 <template>
-  <!-- 订单管理页面主容器 -->
-  <div class="orders-manage">
-    <!-- 搜索与操作区域 -->
-    <div class="operate-bar">
-      <!-- 左侧搜索和筛选区域 -->
-      <div class="left">
-        <!-- 搜索框组件 -->
-        <div class="search-box">
-          <el-input
-            v-model="searchKey"
-            placeholder="搜索订单号/客户/手机号"
-            clearable
-            @clear="handleSearch"
-            @keyup.enter="executeSearch"
-            @focus="showSearchHistory = true"
-          >
-            <template #append>
-              <el-button @click="executeSearch">
-                <el-icon><Search /></el-icon>
-              </el-button>
-            </template>
-          </el-input>
-          <!-- 搜索历史下拉框 -->
-          <div v-if="showSearchHistory && searchHistory.length" class="search-history">
-            <div class="history-header">
-              <span>搜索历史</span>
-              <el-button link @click="clearSearchHistory">清空</el-button>
-            </div>
-            <div class="history-list">
-              <div
-                v-for="(item, index) in searchHistory"
-                :key="item.timestamp"
-                class="history-item"
-                @click="useSearchHistory(item)"
-              >
-                <el-icon><Search /></el-icon>
-                <span>{{ item.keyword }}</span>
-                <el-icon
-                  class="delete-icon"
-                  @click.stop="deleteSearchHistory(index)"
-                >
-                  <Delete />
-                </el-icon>
-              </div>
-            </div>
-          </div>
-        </div>
-        <!-- 订单状态筛选下拉框 -->
-        <el-select
-          v-model="filterStatus"
-          placeholder="订单状态"
-          clearable
-          @change="handleSearch"
-        >
-          <el-option label="全部" value="" />
-          <el-option label="待发货" value="待发货" />
-          <el-option label="拣货中" value="拣货中" />
-          <el-option label="已发货" value="已发货" />
-        </el-select>
-      </div>
-      <!-- 右侧操作按钮区域 -->
-      <div class="right">
-        <el-button type="primary" :disabled="!selectedIds.length" @click="batchShip">
-          批量发货
-        </el-button>
-      </div>
-    </div>
-
-    <!-- 订单表格和分页容器 -->
-    <div class="table-container">
-      <!-- 订单列表表格 -->
-      <el-table
-        :data="orders"
-        v-loading="loading"
-        @selection-change="handleSelectionChange"
-        style="width: 100%"
-        height="calc(100vh - 280px)"
-        border
+  <div class="orders-container">
+    <h2>订单管理</h2>
+    
+    <!-- 操作栏 -->
+    <div class="operations">
+      <el-select
+        v-model="selectedStatus"
+        placeholder="订单状态"
+        style="width: 120px;"
+        clearable
       >
-        <!-- 选择列 -->
-        <el-table-column type="selection" width="55" fixed />
-        <!-- 订单号列 -->
-        <el-table-column prop="orderNo" label="订单号" width="180" fixed />
-        <!-- 客户信息列 -->
-        <el-table-column label="客户信息" width="200" fixed>
-          <template #default="{ row }">
-            <div class="customer-info">
-              <div class="name">{{ row.customerName }}</div>
-              <div class="phone">{{ row.phone }}</div>
-            </div>
-          </template>
-        </el-table-column>
-        <!-- 商品信息列 -->
-        <el-table-column label="商品信息" min-width="300">
-          <template #default="{ row }">
-            <div class="goods-info">
-              <div v-for="(item, index) in row.items" :key="index" class="goods-item">
-                <span class="name">{{ item.name }}</span>
-                <span class="quantity">x{{ item.quantity }}</span>
-                <span class="price">¥{{ item.price }}</span>
-              </div>
-            </div>
-          </template>
-        </el-table-column>
-        <!-- 总金额列 -->
-        <el-table-column prop="total" label="总金额" width="120">
-          <template #default="{ row }">
-            ¥{{ calculateTotal(row.items).toFixed(2) }}
-          </template>
-        </el-table-column>
-        <!-- 订单状态列 -->
-        <el-table-column prop="status" label="状态" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)">
-              {{ row.status }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <!-- 下单时间列 -->
-        <el-table-column prop="createTime" label="下单时间" width="180" />
-        <!-- 操作列 -->
-        <el-table-column label="操作" width="150" fixed="right">
-          <template #default="{ row }">
-            <el-button 
-              v-if="row.status === '待发货'"
-              link 
-              type="primary" 
-              @click="handleShip(row)"
-            >
-              发货
-            </el-button>
-            <el-button link @click="viewDetail(row)">详情</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <!-- 分页组件 -->
-      <div class="pagination-container">
-        <el-pagination
-          v-model:current-page="currentPage"
-          v-model:page-size="pageSize"
-          :total="total"
-          layout="prev, pager, next"
-          :pager-count="2"
-          @size-change="handleSizeChange"
-          @current-change="handleCurrentChange"
-          background
+        <el-option
+          v-for="option in statusOptions"
+          :key="option.value"
+          :label="option.label"
+          :value="option.value"
         />
-      </div>
+      </el-select>
+      <el-input
+        v-model="searchQuery"
+        placeholder="搜索订单号/客户名称"
+        style="width: 200px; margin-left: 16px;"
+        clearable
+      />
     </div>
-
-    <!-- 订单详情对话框 -->
-    <el-dialog
-      v-model="detailVisible"
-      title="订单详情"
-      width="800px"
-      :close-on-click-modal="false"
-      class="order-detail-dialog"
+    
+    <!-- 订单列表 -->
+    <el-table
+      v-loading="loading"
+      :data="paginatedOrders"
+      style="width: 100%; margin-top: 20px;"
     >
-      <div v-if="currentOrder" class="order-detail">
-        <!-- 订单基本信息 -->
-        <div class="detail-section">
-          <h3>订单信息</h3>
-          <div class="info-grid">
-            <div class="info-item">
-              <span class="label">订单号：</span>
-              <span class="value">{{ currentOrder.orderNo }}</span>
-            </div>
-            <div class="info-item">
-              <span class="label">下单时间：</span>
-              <span class="value">{{ currentOrder.createTime }}</span>
-            </div>
-            <div class="info-item">
-              <span class="label">订单状态：</span>
-              <el-tag :type="getStatusType(currentOrder.status)">
-                {{ currentOrder.status }}
-              </el-tag>
-            </div>
+      <el-table-column prop="orderNo" label="订单号" width="180" />
+      <el-table-column prop="customerName" label="客户名称" width="120" />
+      <el-table-column label="商品信息">
+        <template #default="{ row }">
+          <div v-for="(product, index) in row.products" :key="index">
+            {{ product.name }} × {{ product.quantity }}
           </div>
-        </div>
+        </template>
+      </el-table-column>
+      <el-table-column prop="totalAmount" label="总金额" width="120">
+        <template #default="{ row }">
+          ¥{{ typeof row.totalAmount === 'number' ? row.totalAmount.toFixed(2) : '0.00' }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="createTime" label="创建时间" width="180" />
+      <el-table-column label="状态" width="120">
+        <template #default="{ row }">
+          <el-select
+            v-model="row.status"
+            @change="(val) => updateOrderStatus(row, val)"
+            style="width: 100px;"
+          >
+            <el-option :value="0" label="待发货" />
+            <el-option :value="1" label="已发货" />
+            <el-option :value="2" label="已完成" />
+          </el-select>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="120">
+        <template #default="{ row }">
+          <el-button 
+            size="small" 
+            type="danger" 
+            @click="handleDelete(row)"
+          >删除</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
 
-        <!-- 客户信息 -->
-        <div class="detail-section">
-          <h3>客户信息</h3>
-          <div class="info-grid">
-            <div class="info-item">
-              <span class="label">客户姓名：</span>
-              <span class="value">{{ currentOrder.customerName }}</span>
-            </div>
-            <div class="info-item">
-              <span class="label">联系电话：</span>
-              <span class="value">{{ currentOrder.phone }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 商品信息 -->
-        <div class="detail-section">
-          <h3>商品信息</h3>
-          <el-table :data="currentOrder.items" border style="width: 100%">
-            <el-table-column prop="name" label="商品名称" />
-            <el-table-column prop="price" label="单价" width="120">
-              <template #default="{ row }">
-                ¥{{ row.price }}
-              </template>
-            </el-table-column>
-            <el-table-column prop="quantity" label="数量" width="120" />
-            <el-table-column label="小计" width="120">
-              <template #default="{ row }">
-                ¥{{ (row.price * row.quantity).toFixed(2) }}
-              </template>
-            </el-table-column>
-          </el-table>
-          <div class="total-amount">
-            <span class="label">订单总金额：</span>
-            <span class="value">¥{{ calculateTotal(currentOrder.items).toFixed(2) }}</span>
-          </div>
-        </div>
-
-        <!-- 物流信息 -->
-        <div class="detail-section">
-          <h3>物流信息</h3>
-          <el-timeline>
-            <el-timeline-item
-              v-for="(log, index) in logisticsData[currentOrder.id]"
-              :key="index"
-              :timestamp="log.time"
-              :type="index === 0 ? 'primary' : ''"
-            >
-              <div class="logistics-item">
-                <div class="status">{{ log.status }}</div>
-                <div class="location">{{ log.location }}</div>
-              </div>
-            </el-timeline-item>
-          </el-timeline>
-        </div>
-      </div>
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="closeDetail">关闭</el-button>
-        </span>
-      </template>
-    </el-dialog>
+    <!-- 分页 -->
+    <div class="pagination">
+      <el-pagination
+        v-model:current-page="currentPage"
+        :page-size="pageSize"
+        :total="filteredOrders.length"
+        layout="prev, pager, next"
+        :pager-count="5"
+      />
+    </div>
   </div>
 </template>
 
 <style scoped>
-/* 订单管理页面主容器样式 */
-.orders-manage {
-  padding: 24px;
-  background: var(--bg-color);
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-/* 操作栏样式 */
-.operate-bar {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 20px;
-  gap: 12px;
-  flex-shrink: 0;
-}
-
-/* 操作栏左侧区域样式 */
-.operate-bar .left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 1;
-}
-
-/* 搜索框容器样式 */
-.search-box {
-  position: relative;
-  width: 300px;
-  flex-shrink: 0;
-}
-
-/* Element Plus 选择器样式覆盖 */
-:deep(.el-select) {
-  width: 120px;
-  flex-shrink: 0;
-}
-
-/* 操作栏右侧区域样式 */
-.operate-bar .right {
-  display: flex;
-  gap: 12px;
-  flex-shrink: 0;
-}
-
-/* 表格容器样式 */
-.table-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background: white;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-/* 分页容器样式 */
-.pagination-container {
-  padding: 16px;
-  background: white;
-  border-top: 1px solid #ebeef5;
-  display: flex;
-  justify-content: flex-end;
-}
-
-/* 客户信息样式 */
-.customer-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.customer-info .name {
-  font-weight: 500;
-}
-
-.customer-info .phone {
-  color: var(--text-secondary);
-  font-size: 0.9em;
-}
-
-/* 商品信息样式 */
-.goods-info {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.goods-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.goods-item .name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.goods-item .quantity {
-  color: var(--text-secondary);
-  min-width: 40px;
-}
-
-.goods-item .price {
-  color: var(--el-color-danger);
-  min-width: 80px;
-}
-
-/* 搜索历史下拉框样式 */
-.search-history {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background: white;
-  border-radius: 4px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-  z-index: 1000;
-  margin-top: 4px;
-  border: 1px solid #dcdfe6;
-}
-
-/* 搜索历史头部样式 */
-.history-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 12px;
-  border-bottom: 1px solid #eee;
-  background-color: #f5f7fa;
-}
-
-/* 搜索历史列表样式 */
-.history-list {
-  max-height: 300px;
-  overflow-y: auto;
-  background-color: white;
-}
-
-/* 搜索历史项样式 */
-.history-item {
-  display: flex;
-  align-items: center;
-  padding: 8px 12px;
-  cursor: pointer;
-  transition: all 0.3s;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.history-item:last-child {
-  border-bottom: none;
-}
-
-.history-item:hover {
-  background-color: #f5f7fa;
-  color: var(--el-color-primary);
-}
-
-.history-item .el-icon {
-  margin-right: 8px;
-  color: #909399;
-}
-
-.history-item:hover .el-icon {
-  color: var(--el-color-primary);
-}
-
-.history-item .delete-icon {
-  margin-left: auto;
-  opacity: 0;
-  transition: opacity 0.3s;
-  color: #909399;
-}
-
-.history-item:hover .delete-icon {
-  opacity: 1;
-  color: #f56c6c;
-}
-
-.history-item span {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Element Plus 表格样式覆盖 */
-:deep(.el-table) {
-  flex: 1;
-  overflow: hidden;
-  margin-bottom: 0;
-  background: white;
-  border-radius: 4px;
-}
-
-:deep(.el-table__body-wrapper) {
-  overflow-y: auto;
-  padding-bottom: 0;
-}
-
-:deep(.el-table__header-wrapper) {
-  overflow: hidden;
-}
-
-:deep(.el-table__fixed) {
-  height: 100% !important;
-}
-
-:deep(.el-table__fixed-right) {
-  height: 100% !important;
-}
-
-/* Element Plus 分页样式覆盖 */
-:deep(.el-pagination) {
-  padding: 0;
-  margin: 0;
-}
-
-:deep(.el-pagination .el-pagination__total) {
-  margin-right: 8px;
-}
-
-:deep(.el-pagination .el-pagination__sizes) {
-  margin-right: 8px;
-}
-
-:deep(.el-pagination .el-pagination__jump) {
-  margin-left: 8px;
-}
-
-:deep(.el-pagination .el-pager li) {
-  min-width: 32px;
-  height: 32px;
-  line-height: 32px;
-  margin: 0 4px;
-}
-
-:deep(.el-pagination .el-pager li.active) {
-  background-color: var(--el-color-primary);
-  color: white;
-}
-
-:deep(.el-pagination .el-pager li:not(.disabled):hover) {
-  color: var(--el-color-primary);
-}
-
-:deep(.el-pagination .el-pager li.disabled) {
-  color: #c0c4cc;
-  cursor: not-allowed;
-}
-
-/* 订单详情对话框样式 */
-.order-detail-dialog :deep(.el-dialog__body) {
+.orders-container {
   padding: 20px;
 }
 
-.order-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-/* 详情区块样式 */
-.detail-section {
-  background: #f8f9fa;
-  border-radius: 8px;
-  padding: 20px;
-}
-
-.detail-section h3 {
-  margin: 0 0 16px;
-  font-size: 16px;
-  font-weight: 600;
-  color: #1a1a1a;
-}
-
-/* 信息网格布局样式 */
-.info-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 16px;
-}
-
-/* 信息项样式 */
-.info-item {
+.operations {
   display: flex;
   align-items: center;
-  gap: 8px;
+  margin-top: 20px;
 }
 
-.info-item .label {
-  color: #666;
-  min-width: 80px;
-}
-
-.info-item .value {
-  color: #1a1a1a;
-  font-weight: 500;
-}
-
-/* 总金额样式 */
-.total-amount {
-  margin-top: 16px;
-  text-align: right;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.total-amount .label {
-  color: #666;
-  margin-right: 8px;
-}
-
-.total-amount .value {
-  color: var(--el-color-danger);
-}
-
-/* 物流信息项样式 */
-.logistics-item {
+.pagination {
+  margin-top: 20px;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  justify-content: center;
 }
-
-.logistics-item .status {
-  font-weight: 500;
-  color: #1a1a1a;
-}
-
-.logistics-item .location {
-  color: #666;
-  font-size: 0.9em;
-}
-
-/* Element Plus 时间线样式覆盖 */
-:deep(.el-timeline-item__node) {
-  background-color: var(--el-color-primary);
-}
-
-:deep(.el-timeline-item__tail) {
-  border-left-color: #e4e7ed;
-}
-
-:deep(.el-timeline-item__timestamp) {
-  color: #666;
-  font-size: 0.9em;
-}
-
-:deep(.el-timeline-item__content) {
-  color: #1a1a1a;
-}
-</style> 
+</style>

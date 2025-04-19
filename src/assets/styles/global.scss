@@ -1,0 +1,70 @@
+@use './variables.scss' as *;
+
+// Reset and base styles
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  font-family: $font-family;
+  font-size: $font-size-base;
+  color: $text-primary;
+  background-color: $background-color-base;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  height: 100%;
+}
+
+// Common utility classes
+.text-primary { color: $primary-color; }
+.text-success { color: $success-color; }
+.text-warning { color: $warning-color; }
+.text-danger { color: $danger-color; }
+.text-info { color: $info-color; }
+
+.mt-1 { margin-top: $spacing-small; }
+.mt-2 { margin-top: $spacing-base; }
+.mt-3 { margin-top: $spacing-large; }
+
+.mb-1 { margin-bottom: $spacing-small; }
+.mb-2 { margin-bottom: $spacing-base; }
+.mb-3 { margin-bottom: $spacing-large; }
+
+.ml-1 { margin-left: $spacing-small; }
+.ml-2 { margin-left: $spacing-base; }
+.ml-3 { margin-left: $spacing-large; }
+
+.mr-1 { margin-right: $spacing-small; }
+.mr-2 { margin-right: $spacing-base; }
+.mr-3 { margin-right: $spacing-large; }
+
+.p-1 { padding: $spacing-small; }
+.p-2 { padding: $spacing-base; }
+.p-3 { padding: $spacing-large; }
+
+// Responsive utilities
+@media (max-width: $breakpoint-xs) {
+  .hidden-xs { display: none !important; }
+}
+
+@media (min-width: $breakpoint-sm) and (max-width: $breakpoint-md) {
+  .hidden-sm { display: none !important; }
+}
+
+@media (min-width: $breakpoint-md) and (max-width: $breakpoint-lg) {
+  .hidden-md { display: none !important; }
+}
+
+@media (min-width: $breakpoint-lg) and (max-width: $breakpoint-xl) {
+  .hidden-lg { display: none !important; }
+}
+
+@media (min-width: $breakpoint-xl) {
+  .hidden-xl { display: none !important; }
+} 

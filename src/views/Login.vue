@@ -1,43 +1,60 @@
-/**
- * 登录页面组件
- * 主要功能：
- * 1. 用户登录表单展示和验证
- * 2. 记住密码功能
- * 3. 登录状态管理
- * 4. 响应式布局适配
- */
-
-<script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+<script setup lang="ts">
+import { ref, onMounted, onUnmounted, reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { User, Lock } from '@element-plus/icons-vue'
+import CryptoJS from 'crypto-js'
+import { useAuthStore } from '@/stores/auth'
+import type { FormInstance } from 'element-plus'
+import type { LoginCredentials } from '@/types/auth'
 
-// 路由实例
+// 从环境变量获取加密密钥
+const ENCRYPTION_KEY = import.meta.env.VITE_ENCRYPTION_KEY || 'your-secret-key-here'
+
+// 路由实例和用户状态管理
 const router = useRouter()
-
-// 表单相关
-const formRef = ref(null) // 表单引用
-const loading = ref(false) // 加载状态
+const authStore = useAuthStore()
+const loading = ref(false)
 const rememberMe = ref(false) // 记住密码状态
 
+// 表单相关
+const formRef = ref<FormInstance | null>(null) // 表单引用
+
 // 表单数据
-const form = ref({
-  username: '', // 用户名
-  password: '', // 密码
-  remember: false // 是否记住密码
+const form = reactive<LoginCredentials>({
+  username: '',
+  password: '',
+  rememberMe: false
 })
 
 // 表单验证规则
-const rules = {
+const rules = reactive({
   username: [
     { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 3, max: 20, message: '用户名长度应在3-20个字符之间', trigger: 'blur' }
+    { min: 3, max: 20, message: '用户名长度应在 3 到 20 个字符之间', trigger: 'blur' }
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, max: 20, message: '密码长度应在6-20个字符之间', trigger: 'blur' }
+    { min: 6, max: 20, message: '密码长度应在 6 到 20 个字符之间', trigger: 'blur' }
   ]
+})
+
+/**
+ * 加密数据
+ * @param {string} data - 要加密的数据
+ * @returns {string} 加密后的数据
+ */
+const encryptData = (data: string): string => {
+  return CryptoJS.AES.encrypt(data, ENCRYPTION_KEY).toString()
+}
+
+/**
+ * 解密数据
+ * @param {string} encryptedData - 加密的数据
+ * @returns {string} 解密后的数据
+ */
+const decryptData = (encryptedData: string): string => {
+  const bytes = CryptoJS.AES.decrypt(encryptedData, ENCRYPTION_KEY)
+  return bytes.toString(CryptoJS.enc.Utf8)
 }
 
 /**
@@ -48,15 +65,22 @@ const rules = {
 onMounted(() => {
   // 从 localStorage 读取保存的登录信息
   const savedUsername = localStorage.getItem('username')
-  const savedPassword = localStorage.getItem('password')
+  const savedEncryptedPassword = localStorage.getItem('encryptedPassword')
   const savedRememberMe = localStorage.getItem('rememberMe')
   
   // 如果存在保存的登录信息，则自动填充
-  if (savedUsername && savedPassword && savedRememberMe === 'true') {
-    form.value.username = savedUsername
-    form.value.password = savedPassword
-    rememberMe.value = true
-    form.value.remember = true
+  if (savedUsername && savedEncryptedPassword && savedRememberMe === 'true') {
+    form.username = savedUsername
+    try {
+      form.password = decryptData(savedEncryptedPassword)
+      rememberMe.value = true
+      form.rememberMe = true
+    } catch (error) {
+      console.error('解密密码失败:', error)
+      // 如果解密失败，清除保存的密码
+      localStorage.removeItem('encryptedPassword')
+      localStorage.removeItem('rememberMe')
+    }
   }
   
   // 添加键盘事件监听，支持回车键登录
@@ -79,33 +103,47 @@ const handleLogin = async () => {
   if (!formRef.value) return
   
   try {
-    // 表单验证
-    await formRef.value.validate()
+    // 显示加载状态
+    loading.value = true
     
-    // 模拟登录请求
-    if (form.value.username === 'admin' && form.value.password === '123456') {
-      // 保存登录状态
-      localStorage.setItem('isAuthenticated', 'true')
-      localStorage.setItem('username', form.value.username)
+    // 表单验证
+    const isValid = await validateForm()
+    if (!isValid) {
+      return
+    }
+    
+    // 登录请求
+    const response = await authStore.loginUser({
+      username: form.username.trim(),
+      password: form.password,
+      rememberMe: rememberMe.value
+    })
+    
+    if (response.code === 200) {
+      ElMessage.success('登录成功')
       
-      // 处理记住密码
-      if (form.value.remember) {
-        localStorage.setItem('username', form.value.username)
-        localStorage.setItem('password', form.value.password)
+      // 如果选择了记住密码，保存加密的登录信息
+      if (rememberMe.value) {
+        localStorage.setItem('username', form.username.trim())
+        localStorage.setItem('encryptedPassword', encryptData(form.password))
         localStorage.setItem('rememberMe', 'true')
       } else {
+        // 如果没有选择记住密码，清除保存的信息
         localStorage.removeItem('username')
-        localStorage.removeItem('password')
+        localStorage.removeItem('encryptedPassword')
         localStorage.removeItem('rememberMe')
       }
       
-      ElMessage.success('登录成功')
+      // 登录成功后跳转到首页
       router.push('/')
     } else {
-      ElMessage.error('用户名或密码错误')
+      ElMessage.error(response.message || '登录失败')
     }
   } catch (error) {
-    console.error('登录失败:', error)
+    console.error('Login error:', error)
+    ElMessage.error('登录失败，请稍后重试')
+  } finally {
+    loading.value = false
   }
 }
 
@@ -114,7 +152,7 @@ const handleLogin = async () => {
  * 支持回车键触发登录
  * @param {KeyboardEvent} event - 键盘事件对象
  */
-const handleKeyPress = (event) => {
+const handleKeyPress = (event: KeyboardEvent) => {
   if (event.key === 'Enter') {
     handleLogin()
   }
@@ -126,6 +164,21 @@ const handleKeyPress = (event) => {
 const handleForgotPassword = () => {
   ElMessage.info('请联系系统管理员重置密码')
 }
+
+const validateForm = async () => {
+  if (!formRef.value) return false
+  try {
+    await formRef.value.validate()
+    return true
+  } catch (error) {
+    return false
+  }
+}
+
+// 监听 rememberMe 的变化，同步到表单数据
+watch(rememberMe, (newValue) => {
+  form.rememberMe = newValue
+})
 </script>
 
 <template>
@@ -162,8 +215,11 @@ const handleForgotPassword = () => {
             <el-input
               v-model="form.username"
               placeholder="请输入用户名"
-              prefix-icon="User"
-            />
+            >
+              <template #prefix>
+                <el-icon><User /></el-icon>
+              </template>
+            </el-input>
           </el-form-item>
 
           <!-- 密码输入框 -->
@@ -172,9 +228,13 @@ const handleForgotPassword = () => {
               v-model="form.password"
               type="password"
               placeholder="请输入密码"
-              prefix-icon="Lock"
               show-password
-            />
+              @keyup.enter="handleLogin"
+            >
+              <template #prefix>
+                <el-icon><Lock /></el-icon>
+              </template>
+            </el-input>
           </el-form-item>
 
           <!-- 表单选项区域 -->

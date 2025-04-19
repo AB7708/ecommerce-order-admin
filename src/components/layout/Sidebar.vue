@@ -1,7 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { useRoute } from 'vue-router'
-import { DataLine, Goods, List, Money, Promotion } from '@element-plus/icons-vue'
+import { useRoute, useRouter } from 'vue-router'
 
 /**
  * 组件属性定义

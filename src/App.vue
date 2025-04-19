@@ -1,12 +1,36 @@
 <template>
-  <router-view v-if="$route.path === '/login'" />
-  <AdminLayout v-else />
+  <router-view />
 </template>
 
 <script setup>
 import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from './stores/auth'
 import AdminLayout from './components/layout/AdminLayout.vue'
+
+const authStore = useAuthStore()
+const router = useRouter()
+const route = useRoute()
+
+const isAuthenticated = computed(() => {
+  return !!authStore.token
+})
+
+// 检查认证状态
+const checkAuth = async () => {
+  if (authStore.token) {
+    const response = await authStore.validateSession()
+    if (response.code !== 200 || !response.data.valid) {
+      authStore.logoutUser()
+      router.push('/login')
+    }
+  } else if (route.path !== '/login') {
+    router.push('/login')
+  }
+}
+
+// 初始化时检查认证状态
+checkAuth()
 </script>
 
 <style>

@@ -1,21 +1,34 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import type { Ref } from 'vue'
+
+interface UserInfo {
+  email: string
+  name: string
+  role: string
+  avatar: string
+}
+
+interface LoginForm {
+  username: string
+  password: string
+}
 
 export const useUserStore = defineStore('user', () => {
   const router = useRouter()
-  const token = ref(localStorage.getItem('token') || '')
-  const userInfo = ref(JSON.parse(localStorage.getItem('userInfo') || '{}'))
+  const token: Ref<string> = ref(localStorage.getItem('token') || '')
+  const userInfo: Ref<UserInfo> = ref(JSON.parse(localStorage.getItem('userInfo') || '{}'))
 
   // 初始化用户信息
-  const initUserInfo = () => {
+  const initUserInfo = (): void => {
     const savedUserInfo = localStorage.getItem('userInfo')
     if (savedUserInfo) {
       userInfo.value = JSON.parse(savedUserInfo)
     }
   }
 
-  const login = async (loginForm) => {
+  const login = async (loginForm: LoginForm): Promise<boolean> => {
     try {
       // 测试阶段：简单的账号密码验证
       if (loginForm.username === 'admin' && loginForm.password === '123456') {
@@ -23,7 +36,7 @@ export const useUserStore = defineStore('user', () => {
         token.value = mockToken
         localStorage.setItem('token', mockToken)
         
-        const newUserInfo = {
+        const newUserInfo: UserInfo = {
           email: loginForm.username,
           name: '管理员',
           role: 'admin',
@@ -44,9 +57,9 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
-  const logout = () => {
+  const logout = (): void => {
     token.value = ''
-    userInfo.value = {}
+    userInfo.value = {} as UserInfo
     localStorage.removeItem('token')
     localStorage.removeItem('userInfo')
     localStorage.removeItem('rememberMe')

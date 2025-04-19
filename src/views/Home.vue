@@ -1,89 +1,61 @@
-<script setup>
-import { ref, onMounted, watch } from 'vue'
-import { useData } from '../composables/useDashboard'
-import TrendArrow from '../components/ui/TrendArrow.vue'
-import { formatCurrency, formatNumber } from '../utils/format'
+<script lang="ts" setup>
+import { ref, onMounted, watch, computed } from 'vue'
+import { useDataDashboard } from '@/composables/useDataDashboard'
+import TrendArrow from '@/components/ui/TrendArrow.vue'
+import * as formatUtils from '@/utils/format'
+import { ElMessage } from 'element-plus'
 
-const { statsData, chartData, loading, fetchData } = useData()
+const { statistics, chartData, loading, handleTimeRangeChange } = useDataDashboard()
 
-const selectedRange = ref('7')
+const selectedRange = ref<string>('today')
 
-// 监听时间范围变化
-watch(selectedRange, async (newValue) => {
-  await fetchData(parseInt(newValue))
-  // 更新统计数据
-  stats.value.forEach((item, index) => {
-    const baseValue = statsData.value[index]
-    // 如果是30天，则数据为7天的130%
-    const targetValue = newValue === '30' 
-      ? { value: baseValue.value * 1.3, trend: baseValue.trend }
-      : baseValue
-    animateNumber(item, targetValue)
-  })
+// 添加计算属性优化性能
+const maxSalesValue = computed(() => {
+  if (!chartData.value.sales.length) return 0
+  return Math.max(...chartData.value.sales)
 })
 
-// 统计卡片数据
-const stats = ref([
-  { 
-    title: '总订单数', 
-    value: 0,
-    icon: '📦',
-    color: '#6366f1',
-    trend: null,
-    formatter: formatNumber
-  },
-  { 
-    title: '今日订单', 
-    value: 0,
-    icon: '📅',
-    color: '#10b981',
-    trend: null,
-    formatter: formatNumber
-  },
-  { 
-    title: '总销售额', 
-    value: 0,
-    icon: '💰',
-    color: '#f59e0b',
-    trend: null,
-    formatter: formatCurrency
-  },
-  { 
-    title: '用户数量', 
-    value: 0,
-    icon: '👥',
-    color: '#8b5cf6',
-    trend: null,
-    formatter: formatNumber
+const maxOrdersValue = computed(() => {
+  if (!chartData.value.orders.length) return 0
+  return Math.max(...chartData.value.orders)
+})
+
+// 新增：计算平均订单金额
+const averageOrderValue = computed(() => {
+  const totalOrders = statistics.value.find(stat => stat.title === '总订单数')?.value || 0
+  const totalSales = statistics.value.find(stat => stat.title === '总销售额')?.value || 0
+  if (!totalOrders || !totalSales) return 0
+  return totalSales / totalOrders
+})
+
+// 新增：计算转化率
+const conversionRate = computed(() => {
+  const totalVisitors = statistics.value.find(stat => stat.title === '总访客数')?.value || 0
+  const totalOrders = statistics.value.find(stat => stat.title === '总订单数')?.value || 0
+  if (!totalVisitors || !totalOrders) return 0
+  return (totalOrders / totalVisitors) * 100
+})
+
+// 新增：计算客单价
+const customerValue = computed(() => {
+  const totalCustomers = statistics.value.find(stat => stat.title === '总客户数')?.value || 0
+  const totalSales = statistics.value.find(stat => stat.title === '总销售额')?.value || 0
+  if (!totalCustomers || !totalSales) return 0
+  return totalSales / totalCustomers
+})
+
+// 监听时间范围变化
+watch(selectedRange, async (newValue: string) => {
+  try {
+    await handleTimeRangeChange(newValue)
+  } catch (error) {
+    console.error('Failed to fetch dashboard data:', error)
+    ElMessage.error('获取数据失败')
   }
-])
-
-// 动态数字递增效果
-const animateNumber = (item, target) => {
-  const duration = 1000
-  const start = 0
-  const increment = target.value / (duration / 16)
-  let current = start
-
-  const animate = () => {
-    current += increment
-    if (current < target.value) {
-      item.value = Math.floor(current)
-      requestAnimationFrame(animate)
-    } else {
-      item.value = target.value
-      item.trend = target.trend
-    }
-  }
-
-  animate()
-}
+})
 
 onMounted(async () => {
-  await fetchData()
-  stats.value.forEach((item, index) => {
-    animateNumber(item, statsData.value[index])
-  })
+  await handleTimeRangeChange('today')
 })
 </script>
 
@@ -94,6 +66,7 @@ onMounted(async () => {
       <h1 class="page-title">数据看板</h1>
       <div class="date-picker">
         <select v-model="selectedRange">
+          <option value="today">今日</option>
           <option value="7">近7天</option>
           <option value="30">近30天</option>
         </select>
@@ -103,7 +76,7 @@ onMounted(async () => {
     <!-- 核心指标卡片 -->
     <div class="stats-grid">
       <div 
-        v-for="stat in stats" 
+        v-for="stat in statistics" 
         :key="stat.title"
         class="stat-card"
         :style="{ borderLeft: `4px solid ${stat.color}` }"
@@ -116,9 +89,40 @@ onMounted(async () => {
           <div class="stat-value">
             <template v-if="loading">--</template>
             <span v-else>
-              {{ stat.formatter(stat.value) }}
+              {{ stat.unit === '元' ? formatUtils.formatCurrency(stat.value) : formatUtils.formatNumber(stat.value) }}
               <TrendArrow :value="stat.trend" />
             </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 新增：次要指标卡片 -->
+    <div class="secondary-stats">
+      <div class="stat-card">
+        <div class="stat-info">
+          <div class="stat-title">平均订单金额</div>
+          <div class="stat-value">
+            <template v-if="loading">--</template>
+            <span v-else>{{ formatUtils.formatCurrency(averageOrderValue) }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-info">
+          <div class="stat-title">转化率</div>
+          <div class="stat-value">
+            <template v-if="loading">--</template>
+            <span v-else>{{ formatUtils.formatPercentage(conversionRate) }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-info">
+          <div class="stat-title">客单价</div>
+          <div class="stat-value">
+            <template v-if="loading">--</template>
+            <span v-else>{{ formatUtils.formatCurrency(customerValue) }}</span>
           </div>
         </div>
       </div>
@@ -134,11 +138,11 @@ onMounted(async () => {
           </template>
           <template v-else>
             <div class="chart-content">
-              <div v-for="item in chartData.sales" :key="item.date" class="chart-bar">
+              <div v-for="(value, index) in chartData.sales" :key="chartData.labels[index]" class="chart-bar">
                 <div class="bar-container">
-                  <div class="bar-label">{{ item.date }}</div>
-                  <div class="bar-value" :style="{ height: `${30 + (item.value / Math.max(...chartData.sales.map(d => d.value))) * 30}%` }">
-                    <span class="bar-tooltip">{{ formatCurrency(item.value) }}</span>
+                  <div class="bar-label">{{ chartData.labels[index] }}</div>
+                  <div class="bar-value" :style="{ height: `${30 + (value / maxSalesValue) * 30}%` }">
+                    <span class="bar-tooltip">{{ formatUtils.formatCurrency(value) }}</span>
                   </div>
                 </div>
               </div>
@@ -154,11 +158,11 @@ onMounted(async () => {
           </template>
           <template v-else>
             <div class="chart-content">
-              <div v-for="item in chartData.orders" :key="item.date" class="chart-bar">
+              <div v-for="(value, index) in chartData.orders" :key="chartData.labels[index]" class="chart-bar">
                 <div class="bar-container">
-                  <div class="bar-label">{{ item.date }}</div>
-                  <div class="bar-value" :style="{ height: `${30 + (item.value / Math.max(...chartData.orders.map(d => d.value))) * 30}%` }">
-                    <span class="bar-tooltip">{{ formatNumber(item.value) }}</span>
+                  <div class="bar-label">{{ chartData.labels[index] }}</div>
+                  <div class="bar-value" :style="{ height: `${30 + (value / maxOrdersValue) * 30}%` }">
+                    <span class="bar-tooltip">{{ formatUtils.formatNumber(value) }}</span>
                   </div>
                 </div>
               </div>
@@ -170,7 +174,7 @@ onMounted(async () => {
   </div>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 /* 设计系统变量 */
 :root {
   --primary-color: #6366f1;
@@ -187,7 +191,7 @@ onMounted(async () => {
 .dashboard {
   min-height: 100%;
   padding: 24px;
-  background-color: #f5f7fa;  /* 只修改背景颜色 */
+  background-color: #f5f7fa;
   position: relative;
   overflow-x: hidden;
 }
@@ -196,210 +200,207 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 2rem;
+  margin-bottom: 24px;
 }
 
 .page-title {
-  font-size: 1.875rem;
+  font-size: 1.5rem;
   font-weight: 600;
   color: var(--text-primary);
+  margin: 0;
 }
 
-.date-picker select {
-  padding: 0.5rem 1rem;
-  border-radius: var(--border-radius);
-  border: 1px solid #e2e8f0;
-  background: white;
-  color: var(--text-primary);
-  font-size: 0.875rem;
-  cursor: pointer;
-  transition: all 0.3s;
+.date-picker {
+  select {
+    padding: 8px 16px;
+    border: 1px solid #e2e8f0;
+    border-radius: var(--border-radius);
+    background-color: white;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.3s;
+
+    &:hover {
+      border-color: var(--primary-color);
+    }
+
+    &:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+    }
+  }
 }
 
-.date-picker select:hover {
-  border-color: var(--primary-color);
-}
-
-/* 统计卡片升级 */
+/* 统计卡片网格 */
 .stats-grid {
   display: grid;
-  gap: 1.5rem;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+/* 新增：次要指标卡片样式 */
+.secondary-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
   margin-bottom: 24px;
 }
 
 .stat-card {
-  background: white;
-  padding: 1.5rem;
+  background-color: white;
   border-radius: var(--border-radius);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  padding: 20px;
   display: flex;
-  gap: 1rem;
+  align-items: center;
+  gap: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   transition: all 0.3s;
-  min-height: 120px;
-}
 
-.stat-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
 }
 
 .stat-icon {
   width: 48px;
   height: 48px;
-  font-size: 1.5rem;
-  padding: 0.75rem;
-  border-radius: 50%;
+  border-radius: var(--border-radius);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.3s;
-}
-
-.stat-card:hover .stat-icon {
-  transform: scale(1.1);
+  font-size: 1.5rem;
 }
 
 .stat-info {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
 }
 
 .stat-title {
-  color: var(--text-secondary);
   font-size: 0.875rem;
-  margin-bottom: 0.5rem;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
 }
 
 .stat-value {
   font-size: 1.5rem;
   font-weight: 600;
   color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
 }
 
-/* 图表区域布局 */
+/* 图表区域 */
 .chart-area {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
   gap: 24px;
-  margin-top: 24px;
 }
 
 .chart-card {
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
-  height: 400px;  /* 固定高度 */
-  display: flex;
-  flex-direction: column;
-}
+  background-color: white;
+  border-radius: var(--border-radius);
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 
-.chart-card h3 {
-  margin: 0 0 24px 0;
-  color: var(--text-primary);
-  font-size: 1.1rem;
-  font-weight: 600;
+  h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 16px;
+  }
 }
 
 .chart-placeholder {
-  flex: 1;
+  height: 300px;
   position: relative;
-  min-height: 300px;  /* 确保最小高度 */
 }
 
 .chart-skeleton {
-  width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.06) 25%,
+    rgba(0, 0, 0, 0.08) 37%,
+    rgba(0, 0, 0, 0.06) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-loading 1.4s ease infinite;
   border-radius: var(--border-radius);
 }
 
 .chart-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
   height: 100%;
-  padding: 0 20px;
-  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  padding-bottom: 24px;
 }
 
 .chart-bar {
   flex: 1;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  height: 100%;
-  padding: 0 4px;
-}
-
-.bar-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-  height: 100%;
-  position: relative;
   justify-content: flex-end;
 }
 
-.bar-value {
-  background-color: #3b82f6;
-  width: 40px;
-  border-radius: 4px 4px 0 0;
-  transition: all 0.3s;
-  position: relative;
-  min-height: 1px;
+.bar-container {
+  width: 100%;
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  flex-direction: column;
+  align-items: center;
 }
 
 .bar-label {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-secondary);
-  margin-bottom: 8px;
-  text-align: center;
-  width: 100%;
-  padding: 4px 0;
+  margin-top: 8px;
+}
+
+.bar-value {
+  width: 24px;
+  background-color: var(--chart-primary);
+  border-radius: 2px;
+  position: relative;
+  transition: height 0.3s ease;
+
+  &:hover {
+    background-color: var(--chart-secondary);
+
+    .bar-tooltip {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 }
 
 .bar-tooltip {
   position: absolute;
-  top: -25px;
+  top: -32px;
   left: 50%;
-  transform: translateX(-50%);
-  background-color: rgba(0, 0, 0, 0.8);
+  transform: translateX(-50%) translateY(4px);
+  background-color: rgba(0, 0, 0, 0.75);
   color: white;
   padding: 4px 8px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 0.75rem;
   white-space: nowrap;
   opacity: 0;
-  transition: opacity 0.3s;
-  pointer-events: none;
-  z-index: 4;  /* 添加：确保tooltip在最上层 */
+  transition: all 0.3s;
 }
 
-.chart-bar:hover .bar-value {
-  background-color: #2563eb;  /* 使用更深的蓝色 */
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+@keyframes skeleton-loading {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
 }
 
-.chart-bar:hover .bar-tooltip {
-  opacity: 1;
-}
-
-/* 移动端适配优化 */
+/* 响应式布局 */
 @media (max-width: 768px) {
   .dashboard {
     padding: 16px;
@@ -407,34 +408,23 @@ onMounted(async () => {
 
   .stats-grid {
     grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .secondary-stats {
+    grid-template-columns: 1fr;
   }
 
   .chart-area {
     grid-template-columns: 1fr;
-    gap: 16px;
   }
 
   .chart-card {
     padding: 16px;
   }
 
-  .stat-value {
-    font-size: 1.25rem;
+  .chart-placeholder {
+    height: 240px;
   }
-
-  .bar-value {
-    width: 30px;
-  }
-
-  .bar-tooltip {
-    font-size: 10px;
-    padding: 2px 4px;
-  }
-}
-
-/* 加载动画 */
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
 }
 </style> 

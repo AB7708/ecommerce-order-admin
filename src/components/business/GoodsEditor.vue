@@ -1,7 +1,6 @@
 <script setup>
 import { ref, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
 
 const props = defineProps({
   modelValue: Boolean,

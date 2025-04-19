@@ -5,7 +5,7 @@
     <div class="header">
       <h2>营销活动</h2>
       <el-button type="primary" @click="handleAdd">
-        <el-icon><Plus /></el-icon>新建活动
+        <el-icon class="el-icon-plus"></el-icon>新建活动
       </el-button>
     </div>
 
@@ -15,6 +15,18 @@
         <el-form-item label="活动名称">
           <el-input v-model="filterForm.name" placeholder="请输入活动名称" clearable />
         </el-form-item>
+        <el-form-item label="活动类型">
+          <el-select 
+            v-model="filterForm.type" 
+            placeholder="请选择活动类型" 
+            clearable
+            style="width: 180px"
+          >
+            <el-option label="折扣活动" value="discount" />
+            <el-option label="优惠券" value="coupon" />
+            <el-option label="限时抢购" value="flash_sale" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="活动状态">
           <el-select 
             v-model="filterForm.status" 
@@ -22,13 +34,14 @@
             clearable
             style="width: 180px"
           >
-            <el-option label="已结束" value="已结束" />
-            <el-option label="进行中" value="进行中" />
-            <el-option label="未开始" value="未开始" />
+            <el-option label="未开始" value="pending" />
+            <el-option label="进行中" value="active" />
+            <el-option label="已结束" value="ended" />
           </el-select>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">搜索</el-button>
+          <el-button @click="resetSearch">重置</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -38,12 +51,18 @@
       <el-table :data="marketingList" style="width: 100%" v-loading="loading">
         <el-table-column prop="id" label="活动ID" width="100" />
         <el-table-column prop="name" label="活动名称" min-width="200" />
-        <el-table-column prop="type" label="活动类型" width="120" />
+        <el-table-column prop="type" label="活动类型" width="120">
+          <template #default="{ row }">
+            <el-tag :type="getTypeType(row.type)">{{ row.type === 'discount' ? '折扣活动' : row.type === 'coupon' ? '优惠券' : '限时抢购' }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="startTime" label="开始时间" width="180" />
         <el-table-column prop="endTime" label="结束时间" width="180" />
         <el-table-column prop="status" label="状态" width="100">
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)">{{ row.status }}</el-tag>
+            <el-tag :type="getStatusType(row.status)">
+              {{ row.status === 'pending' ? '未开始' : row.status === 'active' ? '进行中' : '已结束' }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="participants" label="参与人数" width="120" />
@@ -65,7 +84,7 @@
           v-model:page-size="pageSize"
           :page-sizes="[10, 20, 50, 100]"
           :total="total"
-          layout="prev, pager, next"
+          layout="total, sizes, prev, pager, next, jumper"
           @size-change="handleSizeChange"
           @current-change="handleCurrentChange"
         />
@@ -75,288 +94,452 @@
     <!-- 活动表单对话框 -->
     <el-dialog
       v-model="dialogVisible"
-      :title="dialogType === 'add' ? '新建活动' : dialogType === 'edit' ? '编辑活动' : '活动详情'"
-      width="600px"
-      :close-on-click-modal="false"
-      center
+      :title="dialogTitle"
+      width="50%"
     >
       <el-form
+        v-if="currentActivity"
         ref="formRef"
-        :model="form"
+        :model="currentActivity"
         :rules="rules"
         label-width="100px"
-        :disabled="dialogType === 'view'"
       >
         <el-form-item label="活动名称" prop="name">
-          <el-input v-model="form.name" placeholder="请输入活动名称" />
+          <el-input v-model="currentActivity.name" placeholder="请输入活动名称" />
         </el-form-item>
         <el-form-item label="活动类型" prop="type">
-          <el-select v-model="form.type" placeholder="请选择活动类型">
-            <el-option label="满减优惠" value="满减优惠" />
-            <el-option label="折扣活动" value="折扣活动" />
-            <el-option label="限时特价" value="限时特价" />
-            <el-option label="积分活动" value="积分活动" />
+          <el-select v-model="currentActivity.type" placeholder="请选择活动类型">
+            <el-option label="折扣活动" value="discount" />
+            <el-option label="优惠券" value="coupon" />
+            <el-option label="限时抢购" value="flash_sale" />
           </el-select>
         </el-form-item>
-        <el-form-item label="活动时间" prop="time">
-          <el-date-picker
-            v-model="form.time"
-            type="datetimerange"
-            range-separator="至"
-            start-placeholder="开始时间"
-            end-placeholder="结束时间"
+        <el-form-item label="活动时间" required>
+          <el-col :span="11">
+            <el-form-item prop="startTime">
+              <el-date-picker
+                v-model="currentActivity.startTime"
+                type="datetime"
+                placeholder="开始时间"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="2" class="text-center">
+            <span class="text-gray-500">-</span>
+          </el-col>
+          <el-col :span="11">
+            <el-form-item prop="endTime">
+              <el-date-picker
+                v-model="currentActivity.endTime"
+                type="datetime"
+                placeholder="结束时间"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+        </el-form-item>
+        <el-form-item label="活动描述" prop="description">
+          <el-input
+            v-model="currentActivity.description"
+            type="textarea"
+            :rows="3"
+            placeholder="请输入活动描述"
           />
         </el-form-item>
         <el-form-item label="活动规则" prop="rules">
           <el-input
-            v-model="form.rules"
+            v-model="currentActivity.rules"
             type="textarea"
             :rows="3"
             placeholder="请输入活动规则"
           />
         </el-form-item>
+        <el-form-item label="目标人群" prop="target">
+          <el-input
+            v-model="currentActivity.target"
+            type="textarea"
+            :rows="2"
+            placeholder="请输入目标人群"
+          />
+        </el-form-item>
+        <el-form-item label="活动预算" prop="budget">
+          <el-input-number
+            v-model="currentActivity.budget"
+            :min="0"
+            :precision="2"
+            :step="100"
+          />
+        </el-form-item>
       </el-form>
       <template #footer>
         <span class="dialog-footer">
-          <el-button @click="dialogVisible = false">关闭</el-button>
-          <el-button v-if="dialogType !== 'view'" type="primary" @click="handleSubmit">确定</el-button>
+          <el-button @click="dialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="handleSave">确定</el-button>
         </span>
       </template>
     </el-dialog>
   </div>
 </template>
 
-<script setup>
-import { ref, onMounted, watch } from 'vue'
-import { Plus } from '@element-plus/icons-vue'
+<script lang="ts" setup>
+import { ref, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
 
-// 筛选表单数据
-const filterForm = ref({
-  name: '', // 活动名称搜索关键词
-  status: '' // 活动状态筛选条件
-})
+interface MarketingActivity {
+  id: string
+  name: string
+  type: 'discount' | 'coupon' | 'flash_sale'
+  status: 'pending' | 'active' | 'ended'
+  startTime: string
+  endTime: string
+  description: string
+  rules: string
+  target: string
+  budget: number
+  actualCost: number
+  createTime: string
+  updateTime: string
+  participants?: number
+}
 
-// 表格数据相关
-const loading = ref(false) // 加载状态
-const marketingList = ref([ // 营销活动列表数据
-  {
-    id: 1,
-    name: '618大促',
-    type: '满减优惠',
-    startTime: '2024-06-18 00:00:00',
-    endTime: '2024-06-20 23:59:59',
-    status: '已结束',
-    participants: 0,
-    rules: '满300减50，满500减100'
-  },
-  {
-    id: 2,
-    name: '双11购物节',
-    type: '折扣活动',
-    startTime: '2024-11-11 00:00:00',
-    endTime: '2024-11-11 23:59:59',
-    status: '已结束',
-    participants: 0,
-    rules: '全场商品8折，部分商品5折'
-  }
-])
+interface FilterForm {
+  name: string
+  type: string
+  status: string
+}
 
-// 原始数据备份，用于搜索筛选
-const originalList = ref([...marketingList.value])
+const loading = ref(false)
+const marketingList = ref<MarketingActivity[]>([])
+const currentPage = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
+const dialogVisible = ref(false)
+const dialogType = ref('add')
+const currentActivity = ref<MarketingActivity | null>(null)
 
-// 分页相关
-const currentPage = ref(1) // 当前页码
-const pageSize = ref(10) // 每页显示数量
-const total = ref(100) // 总数据量
-
-// 对话框相关
-const dialogVisible = ref(false) // 对话框显示状态
-const dialogType = ref('add') // 对话框类型：add-新建，edit-编辑，view-查看
-const formRef = ref(null) // 表单引用
-const form = ref({ // 表单数据
+// 搜索表单
+const filterForm = ref<FilterForm>({
   name: '',
   type: '',
-  time: [],
-  rules: ''
+  status: ''
 })
 
+// 表单引用
+const formRef = ref<FormInstance>()
+
 // 表单验证规则
-const rules = {
+const rules = ref<FormRules>({
   name: [
-    { required: true, message: '请输入活动名称', trigger: 'blur' }
+    { required: true, message: '请输入活动名称', trigger: 'blur' },
+    { min: 2, max: 50, message: '长度在 2 到 50 个字符', trigger: 'blur' }
   ],
   type: [
     { required: true, message: '请选择活动类型', trigger: 'change' }
   ],
-  time: [
-    { required: true, message: '请选择活动时间', trigger: 'change' }
+  startTime: [
+    { required: true, message: '请选择开始时间', trigger: 'change' }
   ],
-  rules: [
-    { required: true, message: '请输入活动规则', trigger: 'blur' }
+  endTime: [
+    { required: true, message: '请选择结束时间', trigger: 'change' },
+    {
+      validator: (_: unknown, value: string, callback: (error?: Error) => void) => {
+        if (value && currentActivity.value?.startTime && new Date(value) <= new Date(currentActivity.value.startTime)) {
+          callback(new Error('结束时间必须晚于开始时间'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'change'
+    }
+  ],
+  description: [
+    { required: true, message: '请输入活动描述', trigger: 'blur' }
+  ],
+  budget: [
+    { required: true, message: '请输入活动预算', trigger: 'blur' },
+    { type: 'number', min: 0, message: '预算必须大于0', trigger: 'blur' }
   ]
-}
+})
 
-/**
- * 获取状态对应的标签类型
- * @param {string} status - 活动状态
- * @returns {string} 标签类型
- */
-const getStatusType = (status) => {
-  const types = {
-    '未开始': 'info',
-    '进行中': 'success',
-    '已结束': 'danger'
+// 获取本地存储的活动数据
+const getLocalActivitiesData = (): MarketingActivity[] => {
+  const data = localStorage.getItem('marketingActivities')
+  if (data) {
+    return JSON.parse(data)
   }
-  return types[status] || 'info'
+  
+  // 默认数据
+  const defaultActivities: MarketingActivity[] = [
+    {
+      id: '1',
+      name: '618大促',
+      type: 'discount',
+      status: 'pending',
+      startTime: '2025-06-01 00:00:00',
+      endTime: '2025-06-18 23:59:59',
+      description: '618购物节全场商品低至5折',
+      rules: '1. 全场商品5折起\n2. 部分商品限时特价\n3. 满300减50',
+      target: '所有用户',
+      budget: 100000,
+      actualCost: 0,
+      createTime: '2024-05-01 10:00:00',
+      updateTime: '2024-05-01 10:00:00',
+      participants: 0
+    },
+    {
+      id: '2',
+      name: '新人专享券',
+      type: 'coupon',
+      status: 'active',
+      startTime: '2024-05-01 00:00:00',
+      endTime: '2099-12-31 23:59:59',
+      description: '新用户注册即送100元优惠券',
+      rules: '1. 新用户注册即可领取\n2. 满200可用\n3. 有效期30天',
+      target: '新注册用户',
+      budget: 50000,
+      actualCost: 20000,
+      createTime: '2024-04-15 14:30:00',
+      updateTime: '2024-04-15 14:30:00',
+      participants: 800
+    },
+    {
+      id: '3',
+      name: '限时秒杀',
+      type: 'flash_sale',
+      status: 'pending',
+      startTime: '2025-05-20 20:00:00',
+      endTime: '2025-05-20 22:00:00',
+      description: '精选商品限时秒杀，低至1折',
+      rules: '1. 每人限购1件\n2. 秒杀商品不支持退换\n3. 库存有限，先到先得',
+      target: '所有用户',
+      budget: 30000,
+      actualCost: 0,
+      createTime: '2024-05-10 09:00:00',
+      updateTime: '2024-05-10 09:00:00',
+      participants: 0
+    },
+    {
+      id: '4',
+      name: '会员日特惠',
+      type: 'discount',
+      status: 'ended',
+      startTime: '2024-04-15 00:00:00',
+      endTime: '2024-04-15 23:59:59',
+      description: '会员专享折扣，额外95折',
+      rules: '1. 仅限会员参与\n2. 可与优惠券叠加使用\n3. 部分商品除外',
+      target: '会员用户',
+      budget: 20000,
+      actualCost: 15000,
+      createTime: '2024-04-01 11:00:00',
+      updateTime: '2024-04-16 00:00:00',
+      participants: 500
+    }
+  ]
+  
+  // 保存默认数据到本地存储
+  localStorage.setItem('marketingActivities', JSON.stringify(defaultActivities))
+  return defaultActivities
 }
 
-/**
- * 处理搜索操作
- * 根据活动名称和状态进行筛选
- */
-const handleSearch = () => {
+// 保存活动数据到本地存储
+const saveActivitiesData = (data: MarketingActivity[]) => {
+  localStorage.setItem('marketingActivities', JSON.stringify(data))
+}
+
+// 获取活动列表
+const fetchActivitiesList = async () => {
   loading.value = true
   try {
-    let filteredData = [...originalList.value]
+    // 模拟 API 请求
+    await new Promise(resolve => setTimeout(resolve, 500))
     
-    // 按活动名称筛选
-    if (filterForm.value.name) {
-      filteredData = filteredData.filter(item => 
-        item.name.toLowerCase().includes(filterForm.value.name.toLowerCase())
-      )
-    }
+    const localData = getLocalActivitiesData()
+    const filteredData = localData.filter(activity => {
+      const matchName = !filterForm.value.name || 
+        activity.name.includes(filterForm.value.name)
+      const matchType = !filterForm.value.type || 
+        activity.type === filterForm.value.type
+      const matchStatus = !filterForm.value.status || 
+        activity.status === filterForm.value.status
+      return matchName && matchType && matchStatus
+    })
     
-    // 按状态筛选
-    if (filterForm.value.status) {
-      filteredData = filteredData.filter(item => 
-        item.status === filterForm.value.status
-      )
-    }
-    
-    // 更新总数
     total.value = filteredData.length
-    
-    // 分页处理
     const start = (currentPage.value - 1) * pageSize.value
     const end = start + pageSize.value
     marketingList.value = filteredData.slice(start, end)
   } catch (error) {
-    console.error('搜索失败:', error)
-    ElMessage.error('搜索失败')
+    console.error('获取活动列表失败:', error)
+    ElMessage.error('获取活动列表失败')
   } finally {
     loading.value = false
   }
 }
 
-// 监听筛选条件变化，自动触发搜索
-watch(
-  () => filterForm.value,
-  () => {
-    handleSearch()
-  },
-  { deep: true }
-)
+// 处理每页显示数量变化
+const handleSizeChange = (size: number) => {
+  pageSize.value = size
+  fetchActivitiesList()
+}
 
-/**
- * 处理新建活动
- * 打开对话框并重置表单
- */
-const handleAdd = () => {
-  dialogType.value = 'add'
-  form.value = {
+// 处理页码变化
+const handleCurrentChange = (page: number) => {
+  currentPage.value = page
+  fetchActivitiesList()
+}
+
+// 处理搜索
+const handleSearch = () => {
+  currentPage.value = 1
+  fetchActivitiesList()
+}
+
+// 重置搜索
+const resetSearch = () => {
+  filterForm.value = {
     name: '',
     type: '',
-    time: [],
-    rules: ''
+    status: ''
   }
-  dialogVisible.value = true
-}
-
-/**
- * 处理编辑活动
- * @param {Object} row - 活动数据
- */
-const handleEdit = (row) => {
-  dialogType.value = 'edit'
-  form.value = {
-    ...row,
-    time: [row.startTime, row.endTime]
-  }
-  dialogVisible.value = true
-}
-
-/**
- * 处理查看活动详情
- * @param {Object} row - 活动数据
- */
-const handleView = (row) => {
-  dialogType.value = 'view'
-  form.value = {
-    ...row,
-    time: [row.startTime, row.endTime]
-  }
-  dialogVisible.value = true
-}
-
-/**
- * 处理删除活动
- * @param {Object} row - 活动数据
- */
-const handleDelete = (row) => {
-  ElMessageBox.confirm(
-    '确定要删除该活动吗？',
-    '警告',
-    {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }
-  ).then(() => {
-    // TODO: 实现删除逻辑
-    ElMessage.success('删除成功')
-  })
-}
-
-/**
- * 处理表单提交
- * 包含表单验证和提交逻辑
- */
-const handleSubmit = async () => {
-  if (!formRef.value) return
-  
-  await formRef.value.validate((valid) => {
-    if (valid) {
-      // TODO: 实现提交逻辑
-      dialogVisible.value = false
-      ElMessage.success(dialogType.value === 'add' ? '创建成功' : '更新成功')
-    }
-  })
-}
-
-/**
- * 处理每页显示数量变化
- * @param {number} val - 新的每页显示数量
- */
-const handleSizeChange = (val) => {
-  pageSize.value = val
   currentPage.value = 1
-  handleSearch()
+  fetchActivitiesList()
 }
 
-/**
- * 处理页码变化
- * @param {number} val - 新的页码
- */
-const handleCurrentChange = (val) => {
-  currentPage.value = val
-  handleSearch()
+// 新增活动
+const handleAdd = () => {
+  dialogType.value = 'add'
+  currentActivity.value = {
+    id: Date.now().toString(),
+    name: '',
+    type: 'discount',
+    status: 'pending',
+    startTime: '',
+    endTime: '',
+    description: '',
+    rules: '',
+    target: '',
+    budget: 0,
+    actualCost: 0,
+    createTime: new Date().toISOString(),
+    updateTime: new Date().toISOString(),
+    participants: 0
+  }
+  dialogVisible.value = true
 }
+
+// 编辑活动
+const handleEdit = (activity: MarketingActivity) => {
+  dialogType.value = 'edit'
+  currentActivity.value = { ...activity }
+  dialogVisible.value = true
+}
+
+// 查看活动详情
+const handleView = (row: MarketingActivity) => {
+  dialogType.value = 'view'
+  currentActivity.value = { ...row }
+  dialogVisible.value = true
+}
+
+// 删除活动
+const handleDelete = async (activity: MarketingActivity) => {
+  try {
+    await ElMessageBox.confirm('确认删除该活动？', '提示', {
+      type: 'warning'
+    })
+    
+    const localData = getLocalActivitiesData()
+    const newData = localData.filter(item => item.id !== activity.id)
+    saveActivitiesData(newData)
+    await fetchActivitiesList()
+    ElMessage.success('删除成功')
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除失败:', error)
+      ElMessage.error('删除失败')
+    }
+  }
+}
+
+// 保存活动
+const handleSave = async () => {
+  if (!formRef.value || !currentActivity.value) return
+  
+  try {
+    await formRef.value.validate()
+    
+    const localData = getLocalActivitiesData()
+    if (dialogType.value === 'add') {
+      // 设置创建时间和更新时间
+      currentActivity.value.createTime = new Date().toISOString()
+      currentActivity.value.updateTime = new Date().toISOString()
+      currentActivity.value.participants = 0
+      localData.push(currentActivity.value)
+    } else {
+      const index = localData.findIndex(item => item.id === currentActivity.value?.id)
+      if (index !== -1) {
+        // 更新修改时间
+        currentActivity.value.updateTime = new Date().toISOString()
+        localData[index] = currentActivity.value
+      }
+    }
+    
+    saveActivitiesData(localData)
+    dialogVisible.value = false
+    await fetchActivitiesList()
+    ElMessage.success(dialogType.value === 'add' ? '创建成功' : '更新成功')
+  } catch (error) {
+    console.error('保存失败:', error)
+    ElMessage.error('保存失败')
+  }
+}
+
+// 获取状态对应的标签类型
+const getStatusType = (status: MarketingActivity['status']): 'info' | 'success' | 'danger' => {
+  switch (status) {
+    case 'pending':
+      return 'info'
+    case 'active':
+      return 'success'
+    case 'ended':
+      return 'danger'
+    default:
+      return 'info'
+  }
+}
+
+// 获取类型对应的标签类型
+const getTypeType = (type: MarketingActivity['type']): 'primary' | 'warning' | 'success' => {
+  switch (type) {
+    case 'discount':
+      return 'primary'
+    case 'coupon':
+      return 'warning'
+    case 'flash_sale':
+      return 'success'
+    default:
+      return 'primary'
+  }
+}
+
+// 对话框标题
+const dialogTitle = computed(() => {
+  if (!currentActivity.value) return ''
+  return currentActivity.value.id ? '编辑活动' : '新建活动'
+})
 
 // 组件挂载时初始化数据
 onMounted(() => {
-  // TODO: 初始化数据
+  fetchActivitiesList()
 })
+
+// 监听筛选条件变化
+watch([() => filterForm.value.name, () => filterForm.value.type, () => filterForm.value.status], () => {
+  // 当筛选条件变化时，自动执行搜索
+  handleSearch()
+}, { deep: true })
 </script>
 
 <style scoped>
@@ -412,5 +595,10 @@ onMounted(() => {
 
 :deep(.el-select .el-input__inner) {
   width: 180px;
+}
+
+/* 按钮间距 */
+.el-button + .el-button {
+  margin-left: 10px;
 }
 </style> 
